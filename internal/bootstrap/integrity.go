@@ -73,17 +73,31 @@ func CheckSkillIntegrity(installDir string) ([]SkillResult, error) {
 	return results, nil
 }
 
-// CheckStructure returns the expected .anthill/ payload directories that are
-// missing under installDir (empty slice when the tree is complete).
+// CheckStructure returns the expected .anthill/ skeleton directories that are
+// missing under installDir (empty slice when the tree is complete). It checks
+// only the STABLE skeleton; the per-workstream backlog subdirectories
+// (bugs/dev/process/product/…) are project-defined — a derivation renames the
+// product stream and may add or drop others — so they are excluded here and
+// validated instead by Section B's sweep-order check (every sweep-order name has
+// a directory).
 func CheckStructure(installDir string) ([]string, error) {
 	dirs, err := PayloadDirs()
 	if err != nil {
 		return nil, err
 	}
+	const backlogPrefix = ".anthill/backlog/"
 	var missing []string
 	for _, d := range dirs {
 		if !strings.HasPrefix(d, ".anthill/") && d != ".anthill" {
 			continue
+		}
+		// Skip project-defined workstream dirs — direct children of
+		// .anthill/backlog/ other than the fixed intake/ queue.
+		if strings.HasPrefix(d, backlogPrefix) {
+			rest := d[len(backlogPrefix):]
+			if rest != "intake" && !strings.Contains(rest, "/") {
+				continue
+			}
 		}
 		info, err := os.Stat(filepath.Join(installDir, filepath.FromSlash(d)))
 		if err != nil || !info.IsDir() {

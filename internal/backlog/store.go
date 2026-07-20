@@ -341,19 +341,52 @@ func (s *Store) Delete(it *Item) error {
 	return os.Remove(it.Path)
 }
 
-// AppendChangelog appends one line to backlog/CHANGELOG.md.
+// AppendChangelog files one line in backlog/CHANGELOG.md under the section that
+// matches the disposition: "done" items go under "## Done"; everything else
+// (discarded / removed) under "## Discarded". The line is inserted newest-first
+// (immediately below the heading). If the target section is absent it is
+// created, so the filing is correct on both scaffolded and minimally-seeded
+// changelogs.
 func (s *Store) AppendChangelog(id, disposition, reason string) error {
-	line := fmt.Sprintf("- %s %s — %s: %s\n",
+	line := fmt.Sprintf("- %s %s — %s: %s",
 		time.Now().Format("2006-01-02"), id, disposition, reason)
+	heading := "## Done"
+	if disposition != "done" {
+		heading = "## Discarded"
+	}
 	path := s.ChangelogPath()
 	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
-	content := string(existing)
-	if content != "" && !strings.HasSuffix(content, "\n") {
-		content += "\n"
+	return mdfile.WriteAtomic(path, []byte(insertUnderHeading(string(existing), heading, line)))
+}
+
+// insertUnderHeading inserts line immediately below the first line whose trimmed
+// text starts with heading (so "## Discarded" matches "## Discarded (triaged out,
+// not done)"). If no such heading exists the section is appended to the end.
+func insertUnderHeading(content, heading, line string) string {
+	lines := strings.Split(content, "\n")
+	for i, ln := range lines {
+		if strings.HasPrefix(strings.TrimSpace(ln), heading) {
+			out := make([]string, 0, len(lines)+1)
+			out = append(out, lines[:i+1]...)
+			out = append(out, line)
+			out = append(out, lines[i+1:]...)
+			return ensureTrailingNewline(strings.Join(out, "\n"))
+		}
 	}
-	content += line
-	return mdfile.WriteAtomic(path, []byte(content))
+	body := strings.TrimRight(content, "\n")
+	if body == "" {
+		return heading + "\n" + line + "\n"
+	}
+	return body + "\n\n" + heading + "\n" + line + "\n"
+}
+
+// ensureTrailingNewline guarantees exactly a trailing newline.
+func ensureTrailingNewline(s string) string {
+	if strings.HasSuffix(s, "\n") {
+		return s
+	}
+	return s + "\n"
 }

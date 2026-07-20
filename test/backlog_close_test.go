@@ -56,6 +56,53 @@ func TestCloseRemoveTerminal(t *testing.T) {
 	wantContains(t, changelog, "removed", "CHANGELOG after --remove")
 }
 
+// sectionedChangelog is the CHANGELOG shape a real (scaffolded) install ships:
+// an empty "## Done" above "## Discarded". It is the shape under which the
+// mis-filing bug manifests.
+const sectionedChangelog = "# Improvement Changelog\n\nOne line per closed item, newest first.\n\n## Done\n\n## Discarded (triaged out, not done)\n"
+
+// TestCloseDoneFilesUnderDoneHeading is the regression for the bug where
+// `close --done` appended the changelog line at the end of the file — landing it
+// under the trailing "## Discarded" heading instead of the empty "## Done". The
+// done line must fall between "## Done" and "## Discarded".
+func TestCloseDoneFilesUnderDoneHeading(t *testing.T) {
+	root := mkTree(t)
+	writeRaw(t, changelogPath(root), sectionedChangelog)
+	writeItem(t, root, "cli", "done-item", claimedFields("Done item", "cli"), "body")
+
+	r := runIn(t, root, "backlog", "close", "done-item", "--done")
+	wantExit(t, r, 0)
+
+	cl := readAll(t, changelogPath(root))
+	doneIdx := strings.Index(cl, "## Done")
+	discIdx := strings.Index(cl, "## Discarded")
+	lineIdx := strings.Index(cl, "done-item")
+	if lineIdx < 0 {
+		t.Fatalf("changelog missing the closed item:\n%s", cl)
+	}
+	if !(lineIdx > doneIdx && lineIdx < discIdx) {
+		t.Fatalf("close --done filed the item under the wrong heading:\n%s", cl)
+	}
+}
+
+// TestCloseDiscardFilesUnderDiscardedHeading is the companion: a discarded item
+// must land under "## Discarded", not "## Done".
+func TestCloseDiscardFilesUnderDiscardedHeading(t *testing.T) {
+	root := mkTree(t)
+	writeRaw(t, changelogPath(root), sectionedChangelog)
+	writeItem(t, root, "cli", "discard-item", claimedFields("Discard item", "cli"), "body")
+
+	r := runIn(t, root, "backlog", "close", "discard-item", "--discard", "not worth doing")
+	wantExit(t, r, 0)
+
+	cl := readAll(t, changelogPath(root))
+	discIdx := strings.Index(cl, "## Discarded")
+	lineIdx := strings.Index(cl, "discard-item")
+	if lineIdx < 0 || lineIdx < discIdx {
+		t.Fatalf("close --discard did not file under ## Discarded:\n%s", cl)
+	}
+}
+
 // TestCloseBlockNonTerminal covers `close --block` (spec §3.7, §7 Q3): the file
 // STAYS, status becomes blocked, the reason lands in note, and NO CHANGELOG
 // line is written.

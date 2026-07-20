@@ -59,7 +59,7 @@ func (a *App) newInitCommand() *cobra.Command {
 			}
 			ws := "---\nsweep-order: " + strings.Join(streams, ", ") + "\nnever-implicit:\n---\n\n# Backlog workstreams\n"
 			files := map[string]string{
-				filepath.Join(anthill, "backlog", "CHANGELOG.md"):   "# Improvement Changelog\n",
+				filepath.Join(anthill, "backlog", "CHANGELOG.md"):   "# Improvement Changelog\n\nOne line per closed item, newest first.\n\n## Done\n\n## Discarded (triaged out, not done)\n",
 				filepath.Join(anthill, "backlog", "workstreams.md"): ws,
 				filepath.Join(anthill, "escalations", "LOG.md"):     "# Escalations log\n",
 			}
