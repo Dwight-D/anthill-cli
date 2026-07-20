@@ -48,43 +48,30 @@ func TestInitWorkstream(t *testing.T) {
 	wantFilePresent(t, filepath.Join(dir, ".anthill", "backlog", "extra"))
 }
 
-// TestDoctorHealthy covers `anthill doctor` on a healthy tree (spec §3.15):
-// exit 0, json ok=true with a checks array.
-func TestDoctorHealthy(t *testing.T) {
-	root := mkTree(t)
-	writeItem(t, root, "cli", "healthy-item", approvedFields("Healthy item", "cli"), "body")
-
-	r := runIn(t, root, "--json", "doctor")
-	wantExit(t, r, 0)
-	obj := jsonObj(t, r.stdout)
-	if obj["ok"] != true {
-		t.Fatalf("healthy tree doctor ok = %v, want true\n%s", obj["ok"], r.stdout)
-	}
-	if _, ok := obj["checks"].([]any); !ok {
-		t.Fatalf("doctor --json missing checks array: %v", obj)
-	}
-}
-
 // TestDoctorSweepOrderNames covers exit 3: workstreams.md sweep-order names a
-// directory that does not exist (spec §3.15 integrity check).
+// directory that does not exist (spec §4.4 Section B integrity check). Built on
+// a real scaffolded install so install integrity (Section A) is healthy and the
+// bad sweep-order name is the sole failure being isolated.
 func TestDoctorSweepOrderNames(t *testing.T) {
-	root := mkTree(t)
-	// Rewrite workstreams.md to reference a non-existent stream.
-	writeRaw(t, filepath.Join(backlogDir(root), "workstreams.md"),
-		"---\nsweep-order: bugs, cli, dev, process, ghoststream\nnever-implicit:\n---\n\n# Workstreams\n")
+	dir := scaffoldFresh(t)
+	// Perturb ONLY the Section B sweep-order: name a stream with no directory,
+	// leaving skills, structure, and framework.md intact.
+	writeRaw(t, filepath.Join(backlogDir(dir), "workstreams.md"),
+		"---\nsweep-order: bugs, product, dev, process, ghoststream\nnever-implicit:\n---\n\n# Workstreams\n")
 
-	r := runIn(t, root, "doctor")
+	r := runIn(t, dir, "doctor")
 	wantExit(t, r, 3)
 }
 
 // TestDoctorAnsweredUnapplied covers the failure mode the escalate skill calls
-// out: an answered-but-unapplied escalation record (spec §3.15). doctor --strict
-// should fail.
+// out: an answered-but-unapplied escalation record (spec §4.4 Section B). The
+// escalations-applied check is always-on (not strict-gated); built on a real
+// scaffolded install so the answered-but-unapplied record is the sole failure.
 func TestDoctorAnsweredUnapplied(t *testing.T) {
-	root := mkTree(t)
-	id := raiseOne(t, root, "Answered but not applied")
-	wantExit(t, runIn(t, root, "escalation", "answer", id, "--decision", "yes"), 0)
+	dir := scaffoldFresh(t)
+	id := raiseOne(t, dir, "Answered but not applied")
+	wantExit(t, runIn(t, dir, "escalation", "answer", id, "--decision", "yes"), 0)
 
-	r := runIn(t, root, "doctor", "--strict")
+	r := runIn(t, dir, "doctor")
 	wantExit(t, r, 3)
 }

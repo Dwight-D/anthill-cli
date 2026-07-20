@@ -50,7 +50,8 @@ func TestScaffoldJSONShape(t *testing.T) {
 		t.Fatalf("scaffold ref = %q, want embedded template_ref %q", obj["ref"], templateRef(t))
 	}
 	// A fresh scaffold writes the skills; assert one representative entry.
-	wantListContains(t, obj, "written", filepath.Join(".claude", "skills", "autonomous"))
+	// Manifest paths are portable forward-slash, not OS-native separators.
+	wantListContains(t, obj, "written", ".claude/skills/autonomous/SKILL.md")
 }
 
 // TestScaffoldIdempotent covers the non-destructive convergence rule (spec

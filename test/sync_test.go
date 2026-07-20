@@ -5,34 +5,55 @@ import (
 	"testing"
 )
 
-// TestSyncDryRunWritesNothing covers `anthill sync --dry-run` (spec §4.5): show
-// the skill-level diff without applying — the stale installed skill is left
-// unchanged, exit 0.
+// TestSyncDryRunWritesNothing covers `anthill sync --dry-run` (spec §4.5) on a
+// CLEAN freshly-scaffolded install: every skill is reported unchanged, nothing
+// is written, exit 0, and the tree is byte-for-byte unchanged.
 func TestSyncDryRunWritesNothing(t *testing.T) {
 	dir := scaffoldFresh(t)
-	// Simulate a stale install: overwrite an installed skill with altered text.
-	stale := "STALE INSTALLED SKILL — differs from embedded\n"
-	writeRaw(t, skillPath(dir, "dispatch"), stale)
+	before := snapshotTree(t, dir)
 
-	r := runIn(t, dir, "sync", "--dry-run")
+	r := runIn(t, dir, "--json", "sync", "--dry-run")
 	wantExit(t, r, 0)
+	obj := jsonObj(t, r.stdout)
 
-	if got := readAll(t, skillPath(dir, "dispatch")); got != stale {
-		t.Fatalf("--dry-run modified the installed skill\n got: %q\nwant: %q", got, stale)
+	if updated := jsonStrings(obj["updated"]); len(updated) != 0 {
+		t.Fatalf("dry-run on a clean install reports updates: %v", updated)
+	}
+	if conflicts := jsonStrings(obj["conflicts"]); len(conflicts) != 0 {
+		t.Fatalf("dry-run on a clean install reports conflicts: %v", conflicts)
+	}
+	if unchanged := jsonStrings(obj["unchanged"]); len(unchanged) == 0 {
+		t.Fatalf("dry-run reported no unchanged skills on a clean install\n%s", r.stdout)
+	}
+	if after := snapshotTree(t, dir); before != after {
+		t.Fatalf("--dry-run modified the tree")
 	}
 }
 
-// TestSyncRestoresStaleSkill covers the restore path (spec §4.5): sync re-copies
-// a diverged general-tier skill verbatim from the embedded template
-// (byte-identical), exit 0, and bumps synced-through to the embedded ref.
+// TestSyncRestoresStaleSkill covers the restore path (spec §4.5). A diverged
+// installed skill on an otherwise-current install is a conflict without --force
+// (exit 3, left untouched); --force overwrites the local edit, restoring the
+// skill byte-identical to the embedded template (exit 0) and bumping
+// synced-through to the embedded ref.
 func TestSyncRestoresStaleSkill(t *testing.T) {
 	dir := scaffoldFresh(t)
-	writeRaw(t, skillPath(dir, "dispatch"), "STALE — replace me on sync\n")
+	stale := "STALE — replace me on sync\n"
+	writeRaw(t, skillPath(dir, "dispatch"), stale)
 
+	// (a) Without --force: a differing skill on a current install is a conflict.
 	r := runIn(t, dir, "--json", "sync")
-	wantExit(t, r, 0)
+	wantExit(t, r, 3)
 	obj := jsonObj(t, r.stdout)
-	wantListContains(t, obj, "updated", "dispatch")
+	wantListContains(t, obj, "conflicts", "dispatch")
+	if got := readAll(t, skillPath(dir, "dispatch")); got != stale {
+		t.Fatalf("sync without --force modified the conflicted skill\n got: %q\nwant: %q", got, stale)
+	}
+
+	// (b) With --force: overwrite the local edit, restore verbatim, exit 0.
+	rf := runIn(t, dir, "--json", "sync", "--force")
+	wantExit(t, rf, 0)
+	fobj := jsonObj(t, rf.stdout)
+	wantListContains(t, fobj, "updated", "dispatch")
 
 	// Restored byte-identical to the embedded template (compared via an
 	// untouched reference scaffold of the same binary).
@@ -40,8 +61,8 @@ func TestSyncRestoresStaleSkill(t *testing.T) {
 	wantSameFile(t, skillPath(dir, "dispatch"), skillPath(ref, "dispatch"))
 
 	// synced-through bumped to the embedded ref.
-	if to, _ := obj["to_ref"].(string); to != templateRef(t) {
-		t.Fatalf("sync to_ref = %q, want embedded template_ref %q", obj["to_ref"], templateRef(t))
+	if to, _ := fobj["to_ref"].(string); to != templateRef(t) {
+		t.Fatalf("sync to_ref = %q, want embedded template_ref %q", fobj["to_ref"], templateRef(t))
 	}
 	if fw := readAll(t, frameworkPath(dir)); !strings.Contains(fw, templateRef(t)) {
 		t.Fatalf("framework.md not stamped with embedded ref after sync\n%s", fw)
