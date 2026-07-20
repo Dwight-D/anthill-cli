@@ -22,6 +22,14 @@ Updated: 2026-07-20 (install / derivation session)
 - 2026-07-20 — Build pipeline commissioned (via `/supervisor`): (1) expedite
   the build+test harness dev item; (2) propose a CLI interface for user review;
   (3) on user go-ahead, parallel test-suite + implementation; (4) run the suite.
+- 2026-07-20 — **CLI interface review (in progress).** Proposal at
+  `docs/CLI_INTERFACE_SPEC.md`. User decisions so far: (a) CLI owns **both**
+  backlog AND escalation records in v1; (b) approval is a **separate gated
+  `approve` verb** — `set status=approved` is refused. Deferred to worker
+  recommendation unless overridden: defer sqlite, drop uuid, `--block`
+  non-terminal, CAS not lockfile, `--json` array, flag `--hint`, allow post-hoc
+  `set title=`. **Awaiting user's final go-ahead after they read the spec**
+  before the parallel test+implementation phase.
 - 2026-07-20 — **Tech stack for the CLI frontend:** mirror the user's other CLI
   — `spf13/cobra` (+`pflag`) for command structure, `charmbracelet/bubbletea`
   `bubbles` `lipgloss` for any interactive TUI, `modernc.org/sqlite` (pure-Go,
