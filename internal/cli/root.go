@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Dwight-D/anthill-cli/internal/bootstrap"
 	"github.com/Dwight-D/anthill-cli/internal/version"
 )
 
@@ -32,7 +33,7 @@ func newRootCommand(a *App) *cobra.Command {
 			return cmd.Help()
 		},
 	}
-	cmd.SetVersionTemplate(version.String() + "\n")
+	cmd.SetVersionTemplate(version.String() + "\ntemplate ref: " + bootstrap.TemplateRef + "\n")
 
 	pf := cmd.PersistentFlags()
 	pf.StringVar(&a.rootFlag, "root", "", "directory containing .anthill/ (default: search upward from CWD)")
@@ -47,20 +48,11 @@ func newRootCommand(a *App) *cobra.Command {
 		a.newDoctorCommand(),
 		a.newValidateCommand(),
 		a.newVersionCommand(),
+		a.newBootstrapCommand(),
+		a.newScaffoldCommand(),
+		a.newSyncCommand(),
 	)
 	return cmd
-}
-
-func (a *App) newVersionCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print the anthill version",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			a.answer("%s", version.String())
-			return nil
-		},
-	}
 }
 
 // Run builds the root command bound to the process stdio, executes it against
