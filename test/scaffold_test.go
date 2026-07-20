@@ -142,6 +142,85 @@ func TestScaffoldStampsFrameworkRef(t *testing.T) {
 	}
 }
 
+// TestScaffoldAppendsExistingGitignore is the regression for the bug where an
+// install target's pre-existing .gitignore (present in essentially every real
+// repo) was treated as a differing file and refused, aborting the whole
+// scaffold. The framework rules must be APPENDED to the existing .gitignore, the
+// scaffold must succeed (exit 0), and the rest of the payload must install.
+func TestScaffoldAppendsExistingGitignore(t *testing.T) {
+	dir := newGitRepo(t)
+	original := "/node_modules\n*.log\n"
+	writeRaw(t, filepath.Join(dir, ".gitignore"), original)
+
+	r := runInDir(t, dir, "--json", "scaffold")
+	wantExit(t, r, 0) // an existing .gitignore must NOT cause a refusal
+	obj := jsonObj(t, r.stdout)
+
+	if refused := jsonStrings(obj["refused"]); len(refused) != 0 {
+		t.Fatalf("existing .gitignore caused refusals: %v", refused)
+	}
+	wantListContains(t, obj, "merged", ".gitignore")
+
+	// The consumer's own rules are preserved AND the framework block is present.
+	gi := readAll(t, filepath.Join(dir, ".gitignore"))
+	if !strings.Contains(gi, "/node_modules") || !strings.Contains(gi, "*.log") {
+		t.Fatalf("scaffold clobbered the consumer's .gitignore rules:\n%s", gi)
+	}
+	if !strings.Contains(gi, ".DS_Store") {
+		t.Fatalf("scaffold did not append the framework ignore rules:\n%s", gi)
+	}
+	// The rest of the payload installed despite the .gitignore already existing.
+	wantFilePresent(t, skillPath(dir, "autonomous"))
+
+	// Idempotent: a second scaffold appends nothing and leaves the tree stable.
+	before := snapshotTree(t, dir)
+	r2 := runInDir(t, dir, "--json", "scaffold")
+	wantExit(t, r2, 0)
+	obj2 := jsonObj(t, r2.stdout)
+	if merged := jsonStrings(obj2["merged"]); len(merged) != 0 {
+		t.Fatalf("second scaffold re-appended to .gitignore: %v", merged)
+	}
+	if snapshotTree(t, dir) != before {
+		t.Fatalf("second scaffold changed the tree (not idempotent)")
+	}
+}
+
+// TestScaffoldPartialApplyReportsTruthfully is the regression for the bug where
+// a single refused file aborted the entire scaffold (writing nothing) while the
+// manifest still reported every file as written. A genuine refusal must be
+// per-file: the safe files install, the refused file is left untouched, and
+// EVERY path the manifest reports as written must actually exist on disk.
+func TestScaffoldPartialApplyReportsTruthfully(t *testing.T) {
+	dir := newGitRepo(t)
+	// Plant a derived (differing) .anthill file that must be refused.
+	derived := "my derived workstreams — do not clobber\n"
+	if err := os.MkdirAll(filepath.Join(dir, ".anthill", "backlog"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRaw(t, filepath.Join(dir, ".anthill", "backlog", "workstreams.md"), derived)
+
+	r := runInDir(t, dir, "--json", "scaffold")
+	wantExit(t, r, 3) // a genuine refusal still signals non-zero
+	obj := jsonObj(t, r.stdout)
+	wantListContains(t, obj, "refused", ".anthill/backlog/workstreams.md")
+
+	written := jsonStrings(obj["written"])
+	if len(written) == 0 {
+		t.Fatalf("nothing reported written despite safe files to install")
+	}
+	// The core of the bug: reported-written must equal actually-written.
+	for _, p := range written {
+		abs := filepath.Join(dir, filepath.FromSlash(p))
+		if !fileExists(t, abs) {
+			t.Fatalf("manifest reported %q as written, but it is not on disk", p)
+		}
+	}
+	// The refused file is preserved verbatim.
+	if got := readAll(t, filepath.Join(dir, ".anthill", "backlog", "workstreams.md")); got != derived {
+		t.Fatalf("refused file was modified: %q", got)
+	}
+}
+
 // ---- local helpers -----------------------------------------------------------
 
 // snapshotTree returns a stable string fingerprint of every regular file under

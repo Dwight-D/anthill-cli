@@ -67,6 +67,7 @@ func openURL(url string) error {
 
 type scaffoldView struct {
 	Written []string `json:"written"`
+	Merged  []string `json:"merged"`
 	Skipped []string `json:"skipped"`
 	Refused []string `json:"refused"`
 	Ref     string   `json:"ref"`
@@ -80,9 +81,11 @@ func (a *App) newScaffoldCommand() *cobra.Command {
 		Short: "Write the embedded framework template into a git repo",
 		Long: "scaffold performs the mechanical install: it writes the pinned, embedded " +
 			"framework template (the general-tier skills, the .anthill/ placeholder tree, " +
-			"CLAUDE.template.md, tools/, .gitignore) into the target directory and stamps " +
-			".anthill/framework.md with the embedded ref. It is non-destructive: files that " +
-			"differ from the template are refused unless --force.",
+			"CLAUDE.template.md, tools/) into the target directory and stamps " +
+			".anthill/framework.md with the embedded ref. It is non-destructive: an existing " +
+			".gitignore has the framework rules appended (idempotently), and any other file that " +
+			"differs from the template is left untouched and refused unless --force. Refusal is " +
+			"per file — the safe files are still installed.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			target := into
@@ -103,6 +106,7 @@ func (a *App) newScaffoldCommand() *cobra.Command {
 			}
 			view := scaffoldView{
 				Written: orEmpty(res.Written),
+				Merged:  orEmpty(res.Merged),
 				Skipped: orEmpty(res.Skipped),
 				Refused: orEmpty(res.Refused),
 				Ref:     res.Ref,
@@ -132,10 +136,13 @@ func (a *App) printScaffoldManifest(v scaffoldView, dryRun bool) {
 	if dryRun {
 		prefix = "(dry-run) "
 	}
-	a.answer("%sscaffold: %d written, %d skipped (identical), %d refused (differs) — ref %s",
-		prefix, len(v.Written), len(v.Skipped), len(v.Refused), shortRef(v.Ref))
+	a.answer("%sscaffold: %d written, %d merged, %d skipped (identical), %d refused (differs) — ref %s",
+		prefix, len(v.Written), len(v.Merged), len(v.Skipped), len(v.Refused), shortRef(v.Ref))
 	for _, p := range v.Written {
 		a.answer("  + %s", p)
+	}
+	for _, p := range v.Merged {
+		a.answer("  ~ %s (framework rules appended)", p)
 	}
 	for _, p := range v.Skipped {
 		a.answer("  = %s", p)

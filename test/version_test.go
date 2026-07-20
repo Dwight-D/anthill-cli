@@ -1,13 +1,20 @@
 package e2e_test
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
-// TestVersionFlag covers the root --version flag (spec §2 global flags).
+// TestVersionFlag covers the root --version flag (spec §2 global flags). The
+// exact version string is intentionally not pinned — only the shape
+// "anthill <non-empty version>" — so a release bump does not break the suite.
 func TestVersionFlag(t *testing.T) {
 	r := run(t, "--version")
 	wantExit(t, r, 0)
-	wantContains(t, r.stdout, "anthill", "version --version stdout")
-	wantContains(t, r.stdout, "0.0.0-dev", "version --version stdout")
+	fields := strings.Fields(strings.TrimSpace(r.stdout))
+	if len(fields) < 2 || fields[0] != "anthill" || fields[1] == "" {
+		t.Fatalf("version output not of form 'anthill <version>': %q", r.stdout)
+	}
 }
 
 // TestVersionVerb covers the `version` subcommand (spec §3 command tree).

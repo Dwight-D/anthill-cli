@@ -140,8 +140,14 @@ func TestScaffoldClassifyWriteSkipRefuse(t *testing.T) {
 		t.Fatal("expected payload entries")
 	}
 	for _, e := range entries {
-		if e.Status != StatusWrite {
-			t.Fatalf("%s: status %v, want StatusWrite", e.Path, e.Status)
+		want := StatusWrite
+		if e.Path == gitignoreRelPath {
+			// An absent .gitignore is merged (marker-wrapped block), not written
+			// verbatim, so a re-scaffold stays idempotent via the marker.
+			want = StatusAppend
+		}
+		if e.Status != want {
+			t.Fatalf("%s: status %v, want %v", e.Path, e.Status, want)
 		}
 	}
 
