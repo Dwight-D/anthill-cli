@@ -11,10 +11,9 @@ below.
   "Anthill", its mechanism nodes, the Installation guide, and the propagation
   pair Anthill Feedback + Anthill Changelog). Where the source repo is
   reachable, its `.claude/skills/` are the canonical general-tier texts.
-- **synced-through:** 2026-07-20 — installed from the `anthill-copy` template
-  drop on this date; current against the Anthill Changelog as of the template's
-  contents. (No upstream Changelog date was carried in the drop; treat this
-  install date as the baseline and reconcile on the first sync.)
+- **synced-through:** ccd6807ba30d85632ebd1435145b3d0d50789567 (installed
+  2026-07-20 from the Anthill framework home). This is the embedded template ref
+  the `anthill` CLI pins; `anthill doctor` / `sync` read it as the baseline.
 
 ## Two-tier discipline (how this installation stays upgradeable)
 
