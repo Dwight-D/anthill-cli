@@ -1,9 +1,16 @@
 ---
+workstream: dev
 title: Stand up the Go build + test harness
 value: Evidence-based done is unenforceable until a headless build+test exists — every cli/dev/bugs item's evidence contract (`go build ./...` / `go test ./...` exit 0) depends on this. It is the bootstrap that unblocks the whole dispatch loop.
 source: Anthill install (2026-07-20) — flagged per INSTALLATION.md Step 3 (no verification existed at install).
-hint: dev
-status: idea
+change-type: tooling
+risk: additive
+verify: from a clean checkout, `go build ./...` exits 0 and `go test ./...` exits 0
+value-verdict: ADVANCE — bootstraps evidence-based done for all workstreams
+disposition: AUTO
+status: approved
+priority: high
+note: expedited
 ---
 
 Initialize the Go module and a minimal but real build+test setup so the

@@ -19,6 +19,15 @@ Updated: 2026-07-20 (install / derivation session)
 - 2026-07-20 — Installed the Anthill harness into this repo (dogfooding: the
   CLI being built is this harness's future schema owner). Posture is
   **propose-only** — triage recommends, the user approves.
+- 2026-07-20 — Build pipeline commissioned (via `/supervisor`): (1) expedite
+  the build+test harness dev item; (2) propose a CLI interface for user review;
+  (3) on user go-ahead, parallel test-suite + implementation; (4) run the suite.
+- 2026-07-20 — **Tech stack for the CLI frontend:** mirror the user's other CLI
+  — `spf13/cobra` (+`pflag`) for command structure, `charmbracelet/bubbletea`
+  `bubbles` `lipgloss` for any interactive TUI, `modernc.org/sqlite` (pure-Go,
+  no cgo) if an index/cache is needed, `google/uuid`. MCP SDK
+  (`modelcontextprotocol/go-sdk`) available if a server surface is wanted.
+  Backlog/escalation source of truth stays the markdown files in `.anthill/`.
 
 ## Constraints
 
