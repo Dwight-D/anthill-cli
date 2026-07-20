@@ -83,7 +83,11 @@ func (s *Store) Validate(strict bool) (*ValidateResult, error) {
 			}
 			name := e.Name()
 			if !strings.HasSuffix(name, ".md") {
-				if ws != "" && strict {
+				// Git housekeeping files legitimately keep an otherwise-empty
+				// workstream directory tracked; they are never backlog items and
+				// must not count as stray files (the scaffolded template ships
+				// .gitkeep in each empty stream dir).
+				if ws != "" && strict && name != ".gitkeep" && name != ".gitignore" {
 					res.add(&Violation{ID: name, Check: "stray-file",
 						Message: fmt.Sprintf("non-item file %q in workstream dir %s", name, ws)})
 				}

@@ -9,6 +9,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Dwight-D/anthill-cli/internal/backlog"
+	"github.com/Dwight-D/anthill-cli/internal/bootstrap"
 )
 
 // defaultWorkstreams are the streams init seeds by default.
@@ -84,111 +85,232 @@ func (a *App) newInitCommand() *cobra.Command {
 	return cmd
 }
 
+// severity classifies how an unhealthy check affects the doctor exit code.
+type severity int
+
+const (
+	sevHard   severity = iota // unhealthy → fails doctor unconditionally
+	sevStrict                 // unhealthy → fails only under --strict
+	sevInfo                   // informational; never fails doctor
+)
+
+// checkResult is one doctor check. Section is "A" (install integrity) or "B"
+// (runtime data integrity). The severity governs exit but is not serialized.
 type checkResult struct {
-	Name   string `json:"name"`
-	OK     bool   `json:"ok"`
-	Detail string `json:"detail"`
+	Section string `json:"section"`
+	Name    string `json:"name"`
+	OK      bool   `json:"ok"`
+	Detail  string `json:"detail"`
+	sev     severity
 }
 
 func (a *App) newDoctorCommand() *cobra.Command {
 	var strict bool
 	cmd := &cobra.Command{
 		Use:   "doctor",
-		Short: "Environment + integrity health check (read-only)",
-		Args:  cobra.NoArgs,
+		Short: "Install-integrity + runtime data health check (read-only)",
+		Long: "doctor reports two labeled sections: Section A checks install integrity " +
+			"(general-tier skills byte-identical to the pinned template, expected .anthill/ " +
+			"structure, remaining derivation placeholders, sync status) and Section B checks " +
+			"runtime data integrity (discoverable tree, config present, sweep order, backlog " +
+			"and escalation validity). --strict also fails on remaining placeholders.",
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var checks []checkResult
 			root, rerr := a.resolveRoot()
 			if rerr != nil {
-				checks = append(checks, checkResult{"discoverable", false, rerr.Error()})
-				return a.reportDoctor(checks)
+				checks := []checkResult{{"B", "discoverable", false, rerr.Error(), sevHard}}
+				return a.reportDoctor(checks, strict)
 			}
-			checks = append(checks, checkResult{"discoverable", true, root})
-
-			store := backlog.NewStore(root)
-			// Config files present.
-			cfg := filepath.Join(root, ".anthill", "backlog", "workstreams.md")
-			if _, err := os.Stat(cfg); err == nil {
-				checks = append(checks, checkResult{"config-present", true, "workstreams.md found"})
-			} else {
-				checks = append(checks, checkResult{"config-present", false, "missing workstreams.md"})
-			}
-			// Sweep-order names existing dirs.
-			listed, err := store.ListedSweepOrder()
-			if err != nil {
-				checks = append(checks, checkResult{"sweep-order", false, err.Error()})
-			} else {
-				missing := []string{}
-				for _, w := range listed {
-					if ok, _ := store.IsWorkstream(w); !ok {
-						missing = append(missing, w)
-					}
-				}
-				if len(missing) == 0 {
-					checks = append(checks, checkResult{"sweep-order", true, "all sweep-order streams have dirs"})
-				} else {
-					checks = append(checks, checkResult{"sweep-order", false, "no dir for: " + strings.Join(missing, ", ")})
-				}
-			}
-			// backlog validate --strict.
-			res, err := store.Validate(true)
-			if err != nil {
-				checks = append(checks, checkResult{"backlog-valid", false, err.Error()})
-			} else if res.OK {
-				checks = append(checks, checkResult{"backlog-valid", true, fmt.Sprintf("%d items clean", res.Checked)})
-			} else {
-				checks = append(checks, checkResult{"backlog-valid", false, fmt.Sprintf("%d violations", len(res.Violations))})
-			}
-			// Escalations well-formed + no answered-but-unapplied.
-			estore, _ := a.escalationStore()
-			problems, err := estore.ValidateWellFormed()
-			if err != nil {
-				checks = append(checks, checkResult{"escalations-valid", false, err.Error()})
-			} else if len(problems) == 0 {
-				checks = append(checks, checkResult{"escalations-valid", true, "records well-formed"})
-			} else {
-				checks = append(checks, checkResult{"escalations-valid", false, strings.Join(problems, "; ")})
-			}
-			unapplied, err := estore.UnappliedAnswered()
-			if err != nil {
-				checks = append(checks, checkResult{"escalations-applied", false, err.Error()})
-			} else if len(unapplied) == 0 {
-				checks = append(checks, checkResult{"escalations-applied", true, "no answered-but-unapplied records"})
-			} else {
-				checks = append(checks, checkResult{"escalations-applied", false, "answered but unapplied: " + strings.Join(unapplied, ", ")})
-			}
-			_ = strict
-			return a.reportDoctor(checks)
+			var checks []checkResult
+			checks = append(checks, a.sectionAChecks(root)...)
+			checks = append(checks, a.sectionBChecks(root)...)
+			return a.reportDoctor(checks, strict)
 		},
 	}
-	cmd.Flags().BoolVar(&strict, "strict", false, "fail on warnings too")
+	cmd.Flags().BoolVar(&strict, "strict", false, "also fail on remaining template placeholders")
 	return cmd
 }
 
-func (a *App) reportDoctor(checks []checkResult) error {
-	ok := true
+// sectionAChecks builds the install-integrity checks against the pinned template.
+func (a *App) sectionAChecks(root string) []checkResult {
+	var checks []checkResult
+
+	// skill integrity — general-tier skills byte-identical to the pinned
+	// template (autonomous's sanctioned adaptation regions exempted).
+	if skills, err := bootstrap.CheckSkillIntegrity(root); err != nil {
+		checks = append(checks, checkResult{"A", "skill-integrity", false, err.Error(), sevHard})
+	} else {
+		var bad []string
+		for _, s := range skills {
+			if !s.OK {
+				bad = append(bad, s.Name+" ("+s.Detail+")")
+			}
+		}
+		if len(bad) == 0 {
+			checks = append(checks, checkResult{"A", "skill-integrity", true,
+				fmt.Sprintf("%d general-tier skills match the pinned template", len(skills)), sevHard})
+		} else {
+			checks = append(checks, checkResult{"A", "skill-integrity", false,
+				"illegal local edits — " + strings.Join(bad, "; "), sevHard})
+		}
+	}
+
+	// structure — expected .anthill/ tree present.
+	if missing, err := bootstrap.CheckStructure(root); err != nil {
+		checks = append(checks, checkResult{"A", "structure", false, err.Error(), sevHard})
+	} else if len(missing) == 0 {
+		checks = append(checks, checkResult{"A", "structure", true, "expected .anthill/ tree present", sevHard})
+	} else {
+		checks = append(checks, checkResult{"A", "structure", false, "missing: " + strings.Join(missing, ", "), sevHard})
+	}
+
+	// derivation status — remaining template placeholders (info unless --strict).
+	if undrived, err := bootstrap.DerivationStatus(root); err != nil {
+		checks = append(checks, checkResult{"A", "derivation-status", false, err.Error(), sevHard})
+	} else if len(undrived) == 0 {
+		checks = append(checks, checkResult{"A", "derivation-status", true, "no remaining template placeholders", sevStrict})
+	} else {
+		checks = append(checks, checkResult{"A", "derivation-status", false,
+			fmt.Sprintf("%d file(s) still hold template placeholders: %s", len(undrived), strings.Join(undrived, ", ")), sevStrict})
+	}
+
+	// sync status — installed synced-through vs embedded ref (informational).
+	if st, err := bootstrap.SyncStatus(root); err != nil {
+		checks = append(checks, checkResult{"A", "sync-status", false, err.Error(), sevInfo})
+	} else {
+		checks = append(checks, checkResult{"A", "sync-status", st.UpToDate, st.Detail, sevInfo})
+	}
+	return checks
+}
+
+// sectionBChecks builds the runtime data-integrity checks (unchanged semantics
+// from the original doctor).
+func (a *App) sectionBChecks(root string) []checkResult {
+	var checks []checkResult
+	checks = append(checks, checkResult{"B", "discoverable", true, root, sevHard})
+
+	store := backlog.NewStore(root)
+	cfg := filepath.Join(root, ".anthill", "backlog", "workstreams.md")
+	if _, err := os.Stat(cfg); err == nil {
+		checks = append(checks, checkResult{"B", "config-present", true, "workstreams.md found", sevHard})
+	} else {
+		checks = append(checks, checkResult{"B", "config-present", false, "missing workstreams.md", sevHard})
+	}
+
+	listed, err := store.ListedSweepOrder()
+	if err != nil {
+		checks = append(checks, checkResult{"B", "sweep-order", false, err.Error(), sevHard})
+	} else {
+		missing := []string{}
+		for _, w := range listed {
+			if ok, _ := store.IsWorkstream(w); !ok {
+				missing = append(missing, w)
+			}
+		}
+		if len(missing) == 0 {
+			checks = append(checks, checkResult{"B", "sweep-order", true, "all sweep-order streams have dirs", sevHard})
+		} else {
+			checks = append(checks, checkResult{"B", "sweep-order", false, "no dir for: " + strings.Join(missing, ", "), sevHard})
+		}
+	}
+
+	res, err := store.Validate(true)
+	if err != nil {
+		checks = append(checks, checkResult{"B", "backlog-valid", false, err.Error(), sevHard})
+	} else if res.OK {
+		checks = append(checks, checkResult{"B", "backlog-valid", true, fmt.Sprintf("%d items clean", res.Checked), sevHard})
+	} else {
+		checks = append(checks, checkResult{"B", "backlog-valid", false, fmt.Sprintf("%d violations", len(res.Violations)), sevHard})
+	}
+
+	estore, _ := a.escalationStore()
+	problems, err := estore.ValidateWellFormed()
+	if err != nil {
+		checks = append(checks, checkResult{"B", "escalations-valid", false, err.Error(), sevHard})
+	} else if len(problems) == 0 {
+		checks = append(checks, checkResult{"B", "escalations-valid", true, "records well-formed", sevHard})
+	} else {
+		checks = append(checks, checkResult{"B", "escalations-valid", false, strings.Join(problems, "; "), sevHard})
+	}
+
+	unapplied, err := estore.UnappliedAnswered()
+	if err != nil {
+		checks = append(checks, checkResult{"B", "escalations-applied", false, err.Error(), sevHard})
+	} else if len(unapplied) == 0 {
+		checks = append(checks, checkResult{"B", "escalations-applied", true, "no answered-but-unapplied records", sevHard})
+	} else {
+		checks = append(checks, checkResult{"B", "escalations-applied", false, "answered but unapplied: " + strings.Join(unapplied, ", "), sevHard})
+	}
+	return checks
+}
+
+func (a *App) reportDoctor(checks []checkResult, strict bool) error {
+	fail := false
 	for _, c := range checks {
-		if !c.OK {
-			ok = false
+		if c.OK {
+			continue
+		}
+		switch c.sev {
+		case sevHard:
+			fail = true
+		case sevStrict:
+			if strict {
+				fail = true
+			}
 		}
 	}
 	if a.json {
-		if err := a.emitJSON(map[string]any{"ok": ok, "checks": checks}); err != nil {
+		if err := a.emitJSON(map[string]any{"ok": !fail, "checks": checks}); err != nil {
 			return err
 		}
 	} else {
-		for _, c := range checks {
-			mark := "ok"
-			if !c.OK {
-				mark = "FAIL"
-			}
-			a.note("[%s] %s: %s", mark, c.Name, c.Detail)
-		}
+		a.printDoctorSections(checks, strict)
 	}
-	if !ok {
+	if fail {
 		return &Error{Exit: 3, Code: "validation", Message: "doctor found integrity problems"}
 	}
 	return nil
+}
+
+// doctorMark renders a check's status label: "ok" when healthy, "FAIL" when it
+// contributes to a non-zero exit, and "warn" when it is unhealthy but only
+// informational (never fails, or fails only under --strict which is off here).
+func doctorMark(c checkResult, strict bool) string {
+	if c.OK {
+		return "ok"
+	}
+	switch c.sev {
+	case sevHard:
+		return "FAIL"
+	case sevStrict:
+		if strict {
+			return "FAIL"
+		}
+		return "warn"
+	default: // sevInfo
+		return "warn"
+	}
+}
+
+// printDoctorSections renders the checks grouped under their two section headers.
+func (a *App) printDoctorSections(checks []checkResult, strict bool) {
+	sections := []struct{ key, label string }{
+		{"A", "Section A — install integrity"},
+		{"B", "Section B — runtime data integrity"},
+	}
+	for _, sec := range sections {
+		printed := false
+		for _, c := range checks {
+			if c.Section != sec.key {
+				continue
+			}
+			if !printed {
+				a.answer("%s", sec.label)
+				printed = true
+			}
+			a.answer("  [%s] %s: %s", doctorMark(c, strict), c.Name, c.Detail)
+		}
+	}
 }
 
 func (a *App) newValidateCommand() *cobra.Command {
