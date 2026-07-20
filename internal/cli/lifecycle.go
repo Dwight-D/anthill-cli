@@ -135,8 +135,8 @@ func (a *App) newDoctorCommand() *cobra.Command {
 func (a *App) sectionAChecks(root string) []checkResult {
 	var checks []checkResult
 
-	// skill integrity — general-tier skills byte-identical to the pinned
-	// template (autonomous's sanctioned adaptation regions exempted).
+	// skill integrity — every general-tier skill byte-identical to the pinned
+	// template; there are no exempted regions.
 	if skills, err := bootstrap.CheckSkillIntegrity(root); err != nil {
 		checks = append(checks, checkResult{"A", "skill-integrity", false, err.Error(), sevHard})
 	} else {

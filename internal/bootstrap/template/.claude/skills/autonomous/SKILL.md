@@ -9,22 +9,18 @@ description: Enter autonomous work mode. Use when the user invokes
 You are now working autonomously on the task given (or about to be given).
 The safety invariants in CLAUDE.md still bind. Within them:
 
-<!-- ADAPTATION POINT (sanctioned during install — see INSTALLATION.md
-     Step 2). The "Proceed freely" list below is the project's own
-     proceed-list: the concrete actions a worker may take without asking,
-     stated in this project's tooling. Re-derive it with the user from the
-     project's real skills, commands, and safety invariants. The entries
-     below are PLACEHOLDERS showing the shape — swap them for your own. -->
+Load `.anthill/autonomy.md` on invocation — it holds this project's
+**proceed-list** (the concrete actions that count as routine here, stated in
+the project's own tooling) and its **decisions-log path**. Missing → the
+project isn't onboarded; derive it with the user before proceeding
+autonomously.
 
 ## Proceed freely (do not ask permission)
 
-- Create/edit/delete <the project's own source, tooling, tests, and dev-docs>.
-- Run <the project's build/compile/test/verification commands via the
-  established skills and tooling>.
-- Produce/import/build <the project's primary artifacts via the toolchain>.
-- git: path-scoped add, commit, push to the designated work branch.
-- Read anything in the repo (rails block the exceptions).
-- Install/update dev dependencies when the task clearly needs them.
+The actions listed in `.anthill/autonomy.md`'s proceed-list — the project's
+routine actions that its safety invariants do not gate. Take them without
+asking. Anything outside that list and not clearly routine follows the
+log-and-continue vs. stop-and-ask rules below.
 
 ## Working rules
 
@@ -33,8 +29,9 @@ The safety invariants in CLAUDE.md still bind. Within them:
   use the shared integration branch instead of a per-agent branch, stage only
   your own paths (never `git add -A`), tag commits with your task id.
 - When a non-blocking question comes up mid-task: don't stop. Make the
-  reasonable routine choice, log it as one line in `.anthill/decisions.md`,
-  continue, and surface the log at the end of the task.
+  reasonable routine choice, log it as one line in the decisions log named in
+  `.anthill/autonomy.md` (`.anthill/decisions.md` by default), continue, and
+  surface the log at the end of the task.
 - When a safety invariant ("ask first") blocks the task: stop, state the
   question with your recommendation, and wait.
 

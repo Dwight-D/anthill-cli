@@ -35,8 +35,9 @@ Whenever you hit friction — a missing tool, a rough process, a recurring
 papercut — file it to the backlog immediately. Submission is deliberately
 dumb: a **title** + a **value** (the pain it removes or potential it unlocks)
 is the whole ask; triage decides the rest. Flagging is always-on in every
-mode; *implementing* is opt-in via `triage`/`dispatch`. See
-`.anthill/backlog/README.md` for the intake command.
+mode; *implementing* is opt-in via `triage`/`dispatch`. The `submit` skill is
+the reach-for handle (it points at the intake command); or file directly per
+`.anthill/backlog/README.md`.
 
 ## Backlog scope
 

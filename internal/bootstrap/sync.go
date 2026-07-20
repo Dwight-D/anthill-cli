@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 )
 
 // SyncResult is the outcome of a sync (or dry-run plan): which general-tier
@@ -12,26 +11,21 @@ import (
 // which could not be reconciled automatically.
 type SyncResult struct {
 	Updated   []string // skills re-copied verbatim to the embedded version
-	Unchanged []string // skills already current (autonomous adaptations preserved)
-	Conflicts []string // skills whose upstream change collides with a local edit / adaptation
+	Unchanged []string // skills already byte-identical to the embedded version
+	Conflicts []string // skills with an unexpected local edit (need --force to overwrite)
 	FromRef   string   // the install's synced-through ref before sync ("" if unstamped)
 	ToRef     string   // the embedded template ref
 }
 
 // Sync brings installDir's general-tier skills to the embedded pinned template.
 //
-// Per-skill reconciliation:
+// Per-skill reconciliation is byte-exact and uniform across every skill — there
+// are no adaptation regions or per-skill merges:
 //   - A skill whose files all match the embedded version is Unchanged.
 //   - A skill that differs while the install's synced-through already equals the
-//     embedded ref is treated as a local edit → Conflict (needs --force);
-//     otherwise (the install is behind) a difference is an upstream update and
-//     the skill is re-copied verbatim → Updated.
-//   - The autonomous skill is region-aware: when the only differences fall inside
-//     the sanctioned adaptation regions (proceed-list, decisions-log path) it is
-//     Unchanged and its adaptations are preserved untouched. When the surrounding
-//     text also differs, the upstream change cannot be merged around the
-//     adaptations automatically → Conflict (needs --force, which overwrites
-//     verbatim and drops the adaptations).
+//     embedded ref is treated as an unexpected local edit → Conflict (needs
+//     --force to overwrite); otherwise (the install is behind) a difference is an
+//     upstream update and the skill is re-copied verbatim → Updated.
 //
 // On a clean apply the synced-through baseline is bumped to the embedded ref.
 // With unresolved conflicts and no force, nothing is bumped and the caller maps
@@ -76,21 +70,9 @@ func Sync(installDir string, dryRun, force bool) (*SyncResult, error) {
 				return nil, rerr
 			}
 
-			isAutonomousSkill := name == AutonomousSkill && strings.HasSuffix(p, "/SKILL.md")
 			switch {
 			case missing:
 				writes = append(writes, p)
-			case isAutonomousSkill:
-				if normalizeAutonomous(installed) == normalizeAutonomous(tmpl) {
-					// Only sanctioned regions differ (if anything): preserve.
-					continue
-				}
-				// Surrounding text diverged: unmergeable without guessing.
-				if force {
-					writes = append(writes, p)
-				} else {
-					conflict = true
-				}
 			case filesEqual(installed, tmpl):
 				// current — nothing to do
 			default:

@@ -170,9 +170,9 @@ func (a *App) newSyncCommand() *cobra.Command {
 		Short: "Bring installed general-tier skills up to the embedded template ref",
 		Long: "sync diffs the installed general-tier skills against the embedded pinned " +
 			"template, re-copies changed skills verbatim, and bumps .anthill/framework.md " +
-			"synced-through. The sanctioned autonomous adaptations (proceed-list, decisions-log " +
-			"path) are preserved; an upstream change that collides with them is reported as a " +
-			"conflict and left unchanged unless --force.",
+			"synced-through. Every skill is compared byte-for-byte with no exceptions; a skill " +
+			"carrying an unexpected local edit is reported as a conflict and left unchanged " +
+			"unless --force.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := a.resolveRoot()

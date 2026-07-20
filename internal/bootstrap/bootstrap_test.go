@@ -43,46 +43,37 @@ func replaceProceedBody(src string, body []string) string {
 	return strings.Join(out, "\n")
 }
 
-func TestAutonomousRegionDiff(t *testing.T) {
+// TestAutonomousComparedByteExact asserts the autonomous skill has no exempted
+// regions: it is byte-compared exactly like every other general-tier skill, so
+// a derived proceed-list — once a sanctioned adaptation — now counts as a
+// divergence.
+func TestAutonomousComparedByteExact(t *testing.T) {
 	tmpl := mustReadTemplate(t, autonomousPath)
 
-	// Identical bytes → match.
-	if !SkillFileMatches(autonomousPath, tmpl, tmpl) {
-		t.Fatal("identical autonomous bytes should match")
+	// Identical bytes → equal.
+	if !filesEqual(tmpl, tmpl) {
+		t.Fatal("identical autonomous bytes should be equal")
 	}
 
-	// Derived proceed-list only → match (sanctioned adaptation exempted).
+	// A derived proceed-list is no longer exempt — it diverges from the template.
 	derived := replaceProceedBody(string(tmpl), []string{
 		"- Build, test, and run the project's own toolchain.",
 		"- git: path-scoped add, commit, push to the work branch.",
 	})
-	if !SkillFileMatches(autonomousPath, []byte(derived), tmpl) {
-		t.Fatal("autonomous with only a derived proceed-list should match the template")
+	if derived == string(tmpl) {
+		t.Fatal("test precondition: proceed-list replacement produced no change")
+	}
+	if filesEqual([]byte(derived), tmpl) {
+		t.Fatal("a derived proceed-list must now count as a divergence (no exemption)")
 	}
 
-	// Relocated decisions-log path only → match (second sanctioned adaptation).
+	// A relocated decisions-log path is likewise no longer exempt.
 	relocated := strings.Replace(string(tmpl), "`.anthill/decisions.md`", "`.anthill/log/decisions.md`", 1)
 	if relocated == string(tmpl) {
 		t.Fatal("test precondition: template must contain the decisions-log path")
 	}
-	if !SkillFileMatches(autonomousPath, []byte(relocated), tmpl) {
-		t.Fatal("autonomous with only a relocated decisions-log path should match")
-	}
-
-	// Edit OUTSIDE the sanctioned regions → flagged (no match).
-	illegal := strings.Replace(string(tmpl),
-		"Work on a feature branch, never directly on main.",
-		"Work on main directly whenever convenient.", 1)
-	if illegal == string(tmpl) {
-		t.Fatal("test precondition: expected working-rules text not found")
-	}
-	if SkillFileMatches(autonomousPath, []byte(illegal), tmpl) {
-		t.Fatal("an edit outside the sanctioned regions must be flagged")
-	}
-
-	// A non-autonomous skill is compared byte-exact — any change is flagged.
-	if SkillFileMatches(".claude/skills/triage/SKILL.md", []byte("x"), []byte("y")) {
-		t.Fatal("non-autonomous skill diff must be flagged")
+	if filesEqual([]byte(relocated), tmpl) {
+		t.Fatal("a relocated decisions-log path must now count as a divergence")
 	}
 }
 
@@ -98,7 +89,7 @@ func TestFrameworkStampAndRead(t *testing.T) {
 		t.Fatalf("stamped line missing; got:\n%s", s)
 	}
 	// The multi-line angle-bracket placeholder must be gone.
-	if strings.Contains(s, "<the upstream framework ref") {
+	if strings.Contains(s, "<the upstream release this install is current") {
 		t.Fatal("angle-bracket placeholder was not collapsed")
 	}
 	ref, err := ReadSyncedThroughRef(stamped)
@@ -229,7 +220,11 @@ func contains(s []string, v string) bool {
 	return false
 }
 
-func TestSyncPreservesAutonomousAdaptation(t *testing.T) {
+// TestSyncFlagsAutonomousLocalEdit covers the retired-exemption contract: a
+// derived autonomous proceed-list on a current install is now an unexpected
+// local edit → conflict (exit 3) without --force, and --force overwrites it
+// verbatim like any other skill.
+func TestSyncFlagsAutonomousLocalEdit(t *testing.T) {
 	dir := t.TempDir()
 	if _, err := Scaffold(dir, false, false); err != nil {
 		t.Fatalf("Scaffold: %v", err)
@@ -244,46 +239,28 @@ func TestSyncPreservesAutonomousAdaptation(t *testing.T) {
 		t.Fatalf("write derived autonomous: %v", err)
 	}
 
-	// Sync: only sanctioned regions differ → unchanged, adaptation preserved.
+	// A proceed-list edit is no longer exempt → conflict, file left unchanged.
 	res, err := Sync(dir, false, false)
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if len(res.Conflicts) != 0 || len(res.Updated) != 0 {
-		t.Fatalf("sync should be a no-op: updated=%v conflicts=%v", res.Updated, res.Conflicts)
+	if !contains(res.Conflicts, "autonomous") {
+		t.Fatalf("expected autonomous conflict; got updated=%v conflicts=%v", res.Updated, res.Conflicts)
 	}
-	after, _ := os.ReadFile(autPath)
-	if !strings.Contains(string(after), marker) {
-		t.Fatal("sync clobbered the derived proceed-list")
-	}
-
-	// Now make an illegal edit OUTSIDE the sanctioned regions while current →
-	// unmergeable → conflict without --force.
-	illegal := strings.Replace(string(after),
-		"Work on a feature branch, never directly on main.",
-		"Work on main directly.", 1)
-	if err := os.WriteFile(autPath, []byte(illegal), 0o644); err != nil {
-		t.Fatalf("write illegal autonomous: %v", err)
-	}
-	res2, err := Sync(dir, false, false)
-	if err != nil {
-		t.Fatalf("Sync (conflict): %v", err)
-	}
-	if !contains(res2.Conflicts, AutonomousSkill) {
-		t.Fatalf("expected autonomous conflict; got updated=%v conflicts=%v", res2.Updated, res2.Conflicts)
+	if after, _ := os.ReadFile(autPath); !strings.Contains(string(after), marker) {
+		t.Fatal("conflicting sync (no --force) must leave the local edit untouched")
 	}
 
 	// --force overwrites verbatim → autonomous becomes an update, no conflict.
-	res3, err := Sync(dir, false, true)
+	res2, err := Sync(dir, false, true)
 	if err != nil {
 		t.Fatalf("Sync (force): %v", err)
 	}
-	if len(res3.Conflicts) != 0 || !contains(res3.Updated, AutonomousSkill) {
-		t.Fatalf("force sync: updated=%v conflicts=%v", res3.Updated, res3.Conflicts)
+	if len(res2.Conflicts) != 0 || !contains(res2.Updated, "autonomous") {
+		t.Fatalf("force sync: updated=%v conflicts=%v", res2.Updated, res2.Conflicts)
 	}
-	forced, _ := os.ReadFile(autPath)
-	if strings.Contains(string(forced), "Work on main directly.") {
-		t.Fatal("force sync did not restore the pristine autonomous skill")
+	if forced, _ := os.ReadFile(autPath); string(forced) != string(tmpl) {
+		t.Fatal("force sync did not restore the pristine autonomous skill verbatim")
 	}
 }
 

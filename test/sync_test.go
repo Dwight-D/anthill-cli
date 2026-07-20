@@ -69,24 +69,31 @@ func TestSyncRestoresStaleSkill(t *testing.T) {
 	}
 }
 
-// TestSyncPreservesAutonomousAdaptation covers the sanctioned-region guarantee
-// (spec §4.5): a derived autonomous "## Proceed freely" edit survives a sync
-// (never clobbered), exit 0, no conflict.
-func TestSyncPreservesAutonomousAdaptation(t *testing.T) {
+// TestSyncFlagsAutonomousLocalEdit covers the retired-exemption contract (spec
+// §sync): the autonomous skill has no sanctioned regions, so a derived
+// "## Proceed freely" edit on a current install is an unexpected local edit —
+// reported as a conflict (exit 3) and left untouched without --force, then
+// overwritten verbatim with --force like any other skill.
+func TestSyncFlagsAutonomousLocalEdit(t *testing.T) {
 	dir := scaffoldFresh(t)
 	marker := "- Deploy the widget service via ./tools/deploy.sh without asking."
 	setProceedList(t, skillPath(dir, "autonomous"), []string{marker})
 
+	// Without --force: an unexpected local edit is a conflict, file untouched.
 	r := runIn(t, dir, "--json", "sync")
-	wantExit(t, r, 0)
+	wantExit(t, r, 3)
 	obj := jsonObj(t, r.stdout)
-
-	if conflicts := jsonStrings(obj["conflicts"]); len(conflicts) != 0 {
-		t.Fatalf("sync reported a conflict on a sanctioned adaptation: %v", conflicts)
-	}
+	wantListContains(t, obj, "conflicts", "autonomous")
 	if got := readAll(t, skillPath(dir, "autonomous")); !strings.Contains(got, marker) {
-		t.Fatalf("sync clobbered the derived proceed-list adaptation\n%s", got)
+		t.Fatalf("sync without --force modified the conflicted autonomous skill\n%s", got)
 	}
+
+	// With --force: overwrite verbatim, restoring the pristine skill (exit 0).
+	rf := runIn(t, dir, "--json", "sync", "--force")
+	wantExit(t, rf, 0)
+	wantListContains(t, jsonObj(t, rf.stdout), "updated", "autonomous")
+	ref := scaffoldFresh(t)
+	wantSameFile(t, skillPath(dir, "autonomous"), skillPath(ref, "autonomous"))
 }
 
 // TestSyncJSONShape covers the --json shape (spec §4.5): { updated, unchanged,

@@ -250,12 +250,13 @@ func findMentioning(checks []map[string]any, sub string) (map[string]any, bool) 
 	return nil, false
 }
 
-// ---- autonomous adaptation-region editing ------------------------------------
+// ---- autonomous proceed-list editing -----------------------------------------
 
 // setProceedList rewrites the autonomous skill at path, replacing the body of
 // the "## Proceed freely" region (up to the next "## Working rules" heading)
-// with the given bullet lines. The surrounding skill text is left untouched, so
-// the edit is confined to the sanctioned adaptation region.
+// with the given bullet lines. The surrounding skill text is left untouched.
+// Since the exemption for this region has been retired, such an edit now
+// diverges the installed skill from the pinned template.
 func setProceedList(t *testing.T, path string, bullets []string) {
 	t.Helper()
 	content := readAll(t, path)

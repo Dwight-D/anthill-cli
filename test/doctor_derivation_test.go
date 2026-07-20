@@ -24,12 +24,14 @@ func TestDoctorGreenOnDerivedInstall(t *testing.T) {
 	// remaining template quote-blocks.
 	wantNonZero(t, runInDir(t, dir, "doctor", "--strict"))
 
-	// Replace the six derive-target files (the ones carrying template
+	// Replace the seven derive-target files (the ones carrying template
 	// quote-blocks) with valid, marker-free derived content. framework.md keeps a
 	// parseable synced-through at the embedded ref (sync-status), and
 	// workstreams.md keeps a valid sweep-order naming existing dirs (Section B).
 	writeRaw(t, filepath.Join(dir, ".anthill", "backlog", "workstreams.md"),
 		"---\nsweep-order: bugs, product, dev, process\nnever-implicit:\n---\n\n# Backlog workstreams\n\nDerived for the test project.\n")
+	writeRaw(t, filepath.Join(dir, ".anthill", "autonomy.md"),
+		"# Autonomy contract config\n\n## Proceed freely (do not ask permission)\n\n- Build and test the project.\n\n## Decisions log\n\n- **Path:** `.anthill/decisions.md`\n")
 	writeRaw(t, filepath.Join(dir, ".anthill", "backlog", "bindings.md"),
 		"# Backlog bindings\n\nConvention-first schema owner. Derived.\n")
 	writeRaw(t, filepath.Join(dir, ".anthill", "resources.md"),

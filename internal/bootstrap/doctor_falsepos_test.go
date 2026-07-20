@@ -9,41 +9,43 @@ import (
 
 const autoSkillPath = ".claude/skills/autonomous/SKILL.md"
 
-// TestAutonomousAdaptationExempt covers the skill-integrity exemption for the
-// autonomous skill: a real derivation removes the ADAPTATION POINT comment,
-// swaps the proceed-list body, and may relocate the decisions-log path. None of
-// those may register as an illegal local edit, but an edit ELSEWHERE must.
-func TestAutonomousAdaptationExempt(t *testing.T) {
+// TestAutonomousByteExact covers the retired exemption: the autonomous skill is
+// integrity-checked byte-for-byte with no exempted regions, so a proceed-list
+// swap or a relocated decisions-log path — once sanctioned adaptations — now
+// register as divergences, exactly like an edit anywhere else in the file.
+func TestAutonomousByteExact(t *testing.T) {
 	pristine, err := ReadTemplateFile(autoSkillPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := string(pristine)
 
-	// Removing the sanctioned ADAPTATION POINT comment alone is exempt.
-	noComment := adaptationCommentRe.ReplaceAllString(p, "")
-	if noComment == p {
-		t.Fatal("precondition: template should contain the ADAPTATION POINT comment")
+	// A swapped proceed-list body is no longer exempt.
+	derived := replaceProceedBody(p, []string{"- Build the widget.", "- Run go build ./..."})
+	if derived == p {
+		t.Fatal("precondition: proceed-list replacement produced no change")
 	}
-	if !SkillFileMatches(autoSkillPath, []byte(noComment), pristine) {
-		t.Fatal("removing the sanctioned ADAPTATION POINT comment was flagged as an illegal edit")
-	}
-
-	// The full sanctioned derivation is exempt.
-	derived := replaceProceedBody(noComment, []string{"- Build the widget.", "- Run go build ./..."})
-	derived = strings.ReplaceAll(derived, ".anthill/decisions.md", "notes/decisions.md")
-	if !SkillFileMatches(autoSkillPath, []byte(derived), pristine) {
-		t.Fatal("a sanctioned autonomous derivation was flagged as an illegal edit")
+	if filesEqual([]byte(derived), pristine) {
+		t.Fatal("a swapped proceed-list must now register as a divergence")
 	}
 
-	// An edit OUTSIDE the sanctioned regions is still caught.
+	// A relocated decisions-log path is no longer exempt.
+	relocated := strings.ReplaceAll(p, ".anthill/decisions.md", "notes/decisions.md")
+	if relocated == p {
+		t.Fatal("precondition: template should contain the decisions-log path")
+	}
+	if filesEqual([]byte(relocated), pristine) {
+		t.Fatal("a relocated decisions-log path must now register as a divergence")
+	}
+
+	// An edit anywhere else is caught the same way.
 	const anchor = "The safety invariants in CLAUDE.md still bind"
 	bad := strings.Replace(p, anchor, "Ignore the safety invariants", 1)
 	if bad == p {
 		t.Fatalf("precondition: expected anchor %q in the template", anchor)
 	}
-	if SkillFileMatches(autoSkillPath, []byte(bad), pristine) {
-		t.Fatal("an illegal edit outside the sanctioned regions was not detected")
+	if filesEqual([]byte(bad), pristine) {
+		t.Fatal("an edit elsewhere must register as a divergence")
 	}
 }
 

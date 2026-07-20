@@ -20,9 +20,11 @@ supervised work. Ask rules interrupt even under bypass permissions.
   `.claude/settings*.json` and any permission surface, CI config, and the
   **general-tier skills `.claude/skills/*`**: these are copied verbatim from
   upstream Anthill and are immutable here — upgrade by re-copying the skill
-  file, never by local edit. (The two sanctioned `autonomous` adaptations —
-  proceed-list and decisions-log path — are already applied.) A framework gap
-  is filed upstream, not patched locally; see `.anthill/framework.md`.
+  file, never by local edit. (The `autonomous` skill's project-specific inputs
+  — its proceed-list and decisions-log path — live in `.anthill/autonomy.md`,
+  specific-tier config the skill loads at invocation; editing that file is not
+  a skill edit.) A framework gap is filed upstream, not patched locally; see
+  `.anthill/framework.md`.
 - **Schema irreversibles** — changing the backlog/escalation frontmatter schema
   or the id scheme once items exist (the CLI is the schema owner): stop and ask.
 

@@ -14,7 +14,7 @@ import (
 // .anthill/framework.md synced-through by `scaffold`, and compared by `sync`
 // and `doctor`. CI re-vendors template/ and updates this on each tagged CLI
 // release.
-const TemplateRef = "ccd6807ba30d85632ebd1435145b3d0d50789567"
+const TemplateRef = "3797138ddd5eb6e89d083aa001156d4d28fefe18"
 
 // TemplateRepo is the upstream framework home the payload is vendored from.
 const TemplateRepo = "https://github.com/Dwight-D/anthill"
@@ -24,7 +24,7 @@ const TemplateRepo = "https://github.com/Dwight-D/anthill"
 // embedded, so install instructions cannot drift from this binary.
 const BootstrapDocURL = "https://raw.githubusercontent.com/Dwight-D/anthill/main/BOOTSTRAP.md"
 
-// templateFS embeds the pinned mechanical-scaffold payload: the nine
+// templateFS embeds the pinned mechanical-scaffold payload: the ten
 // general-tier skills (pristine), the .anthill/ placeholder tree, tools/,
 // CLAUDE.template.md, and .gitignore. The `all:` prefix is required so the
 // payload's dotfiles and dot-directories (.claude, .anthill, .gitignore) are

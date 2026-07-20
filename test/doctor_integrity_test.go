@@ -45,10 +45,11 @@ func TestDoctorTamperedSkill(t *testing.T) {
 	}
 }
 
-// TestDoctorAutonomousAdaptationExempt covers the sanctioned exemption (spec
-// §4.4 Section A): editing ONLY the autonomous skill's "## Proceed freely"
-// adaptation region does NOT flag autonomous; doctor stays exit 0 on that check.
-func TestDoctorAutonomousAdaptationExempt(t *testing.T) {
+// TestDoctorFlagsAutonomousLocalEdit covers the retired exemption (spec §doctor
+// Section A): the autonomous skill has no exempted regions, so editing its
+// "## Proceed freely" region is a flat integrity failure — doctor flags
+// autonomous and exits 3.
+func TestDoctorFlagsAutonomousLocalEdit(t *testing.T) {
 	dir := scaffoldFresh(t)
 	setProceedList(t, skillPath(dir, "autonomous"), []string{
 		"- Create/edit/delete anything under the widget project's src/ and tests/.",
@@ -57,10 +58,14 @@ func TestDoctorAutonomousAdaptationExempt(t *testing.T) {
 	})
 
 	r := runIn(t, dir, "--json", "doctor")
-	wantExit(t, r, 0)
+	wantExit(t, r, 3)
+	obj := jsonObj(t, r.stdout)
+	if obj["ok"] != false {
+		t.Fatalf("edited-autonomous doctor ok = %v, want false", obj["ok"])
+	}
 	checks := doctorChecks(t, r.stdout)
-	if c, found := findFailingMentioning(checks, "autonomous"); found {
-		t.Fatalf("autonomous adaptation was flagged as a failure: %v", c)
+	if _, found := findFailingMentioning(checks, "skill"); !found {
+		t.Fatalf("no failing skill-integrity check reported for the autonomous edit\n%s", r.stdout)
 	}
 }
 

@@ -18,10 +18,9 @@ type SkillResult struct {
 
 // CheckSkillIntegrity compares every installed general-tier skill under
 // installDir/.claude/skills against the embedded pinned template. Each skill is
-// OK when all its files are present and match (byte-identical, except the
-// autonomous skill's sanctioned adaptation regions, which are exempted). A
-// missing or diverging file marks the skill not-OK — the exact local-edit
-// drift the two-tier split prevents.
+// OK when all its files are present and byte-identical to the pinned version —
+// there are no exempted regions. A missing or diverging file marks the skill
+// not-OK — the exact local-edit drift the two-tier split prevents.
 func CheckSkillIntegrity(installDir string) ([]SkillResult, error) {
 	names, err := SkillNames()
 	if err != nil {
@@ -54,17 +53,13 @@ func CheckSkillIntegrity(installDir string) ([]SkillResult, error) {
 				}
 				return nil, rerr
 			}
-			if !SkillFileMatches(p, installed, tmpl) {
+			if !filesEqual(installed, tmpl) {
 				problems = append(problems, "local edit in "+p)
 			}
 		}
 		r := SkillResult{Name: name, OK: len(problems) == 0}
 		if r.OK {
-			if name == AutonomousSkill {
-				r.Detail = "matches pinned template (sanctioned adaptations exempted)"
-			} else {
-				r.Detail = "byte-identical to pinned template"
-			}
+			r.Detail = "byte-identical to pinned template"
 		} else {
 			r.Detail = strings.Join(problems, "; ")
 		}
