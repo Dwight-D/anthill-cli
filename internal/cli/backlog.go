@@ -145,12 +145,16 @@ func (a *App) newBacklogList() *cobra.Command {
 }
 
 func (a *App) newBacklogShow() *cobra.Command {
-	var body bool
+	var body, noBody bool
 	cmd := &cobra.Command{
 		Use:   "show <id>",
 		Short: "Print one item's frontmatter and body",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			includeBody := body
+			if noBody {
+				includeBody = false
+			}
 			store, err := a.backlogStore()
 			if err != nil {
 				return err
@@ -160,13 +164,14 @@ func (a *App) newBacklogShow() *cobra.Command {
 				return wrapStoreErr(err)
 			}
 			if a.json {
-				return a.emitJSON(viewItem(it, body))
+				return a.emitJSON(viewItem(it, includeBody))
 			}
-			a.printItemDetail(it, body)
+			a.printItemDetail(it, includeBody)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&body, "body", true, "include the markdown body")
+	cmd.Flags().BoolVar(&noBody, "no-body", false, "omit the markdown body")
 	return cmd
 }
 

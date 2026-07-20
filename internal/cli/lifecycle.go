@@ -114,12 +114,12 @@ func (a *App) newDoctorCommand() *cobra.Command {
 				checks = append(checks, checkResult{"config-present", false, "missing workstreams.md"})
 			}
 			// Sweep-order names existing dirs.
-			order, _, err := store.SweepOrder()
+			listed, err := store.ListedSweepOrder()
 			if err != nil {
 				checks = append(checks, checkResult{"sweep-order", false, err.Error()})
 			} else {
 				missing := []string{}
-				for _, w := range order {
+				for _, w := range listed {
 					if ok, _ := store.IsWorkstream(w); !ok {
 						missing = append(missing, w)
 					}

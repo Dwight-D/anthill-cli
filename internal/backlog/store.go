@@ -123,6 +123,31 @@ func (s *Store) SweepOrder() (order []string, neverImplicit map[string]bool, err
 	return order, neverImplicit, nil
 }
 
+// ListedSweepOrder returns the sweep-order names exactly as written in
+// workstreams.md frontmatter, without reconciling against on-disk directories.
+// It is the raw list an integrity check compares against existing dirs.
+func (s *Store) ListedSweepOrder() ([]string, error) {
+	path := filepath.Join(s.dir(), "workstreams.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	fm, _, ferr := mdfile.Split(data)
+	if ferr != nil {
+		return nil, nil
+	}
+	var meta struct {
+		SweepOrder string `yaml:"sweep-order"`
+	}
+	if yaml.Unmarshal(fm, &meta) != nil {
+		return nil, nil
+	}
+	return splitList(meta.SweepOrder), nil
+}
+
 func splitList(s string) []string {
 	var out []string
 	for _, p := range strings.Split(s, ",") {
