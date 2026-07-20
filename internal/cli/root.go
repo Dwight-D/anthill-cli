@@ -2,17 +2,23 @@
 package cli
 
 import (
+	"io"
+	"os"
+
 	"github.com/spf13/cobra"
 
 	"github.com/Dwight-D/anthill-cli/internal/version"
 )
 
-// NewRootCommand constructs the root "anthill" cobra command.
-//
-// It defines only the root: subcommands are designed separately. The root
-// carries descriptive help text and a --version flag that prints the build
-// version string.
+// NewRootCommand constructs the root "anthill" cobra command with all
+// subcommands wired to an App bound to the process stdio.
 func NewRootCommand() *cobra.Command {
+	return newRootCommand(newApp(os.Stdout, os.Stderr))
+}
+
+// newRootCommand builds the root command against a specific App (streams +
+// global flags). Every subcommand closes over this App.
+func newRootCommand(a *App) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "anthill",
 		Short: "Anthill backlog and escalation CLI",
@@ -27,5 +33,43 @@ func NewRootCommand() *cobra.Command {
 		},
 	}
 	cmd.SetVersionTemplate(version.String() + "\n")
+
+	pf := cmd.PersistentFlags()
+	pf.StringVar(&a.rootFlag, "root", "", "directory containing .anthill/ (default: search upward from CWD)")
+	pf.BoolVar(&a.json, "json", false, "emit machine-readable JSON on stdout")
+	pf.BoolVarP(&a.quiet, "quiet", "q", false, "suppress non-essential human output")
+	pf.BoolVar(&a.noColor, "no-color", false, "disable ANSI styling")
+
+	cmd.AddCommand(
+		a.newBacklogCommand(),
+		a.newEscalationCommand(),
+		a.newInitCommand(),
+		a.newDoctorCommand(),
+		a.newValidateCommand(),
+		a.newVersionCommand(),
+	)
 	return cmd
+}
+
+func (a *App) newVersionCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "version",
+		Short: "Print the anthill version",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			a.answer("%s", version.String())
+			return nil
+		},
+	}
+}
+
+// Run builds the root command bound to the process stdio, executes it against
+// args, and returns the process exit code (mapping errors per the exit table).
+func Run(args []string, stdout, stderr io.Writer) int {
+	a := newApp(stdout, stderr)
+	root := newRootCommand(a)
+	root.SetArgs(args)
+	root.SetOut(stdout)
+	root.SetErr(stderr)
+	return a.exitCode(root.Execute())
 }
