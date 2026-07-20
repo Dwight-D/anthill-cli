@@ -28,8 +28,10 @@ Updated: 2026-07-20 (install / derivation session)
   `approve` verb** — `set status=approved` is refused. Deferred to worker
   recommendation unless overridden: defer sqlite, drop uuid, `--block`
   non-terminal, CAS not lockfile, `--json` array, flag `--hint`, allow post-hoc
-  `set title=`. **Awaiting user's final go-ahead after they read the spec**
-  before the parallel test+implementation phase.
+  `set title=`. User reviewed and **approved** the spec; **TUI deferred** to a
+  later scope (planned, not v1). `docs/CLI_INTERFACE_SPEC.md` is the accepted
+  v1 contract. v1 implemented on `integration` with a green black-box suite
+  (not yet merged to `main` — pending user decision on merge/push).
 - 2026-07-20 — **Tech stack for the CLI frontend:** mirror the user's other CLI
   — `spf13/cobra` (+`pflag`) for command structure, `charmbracelet/bubbletea`
   `bubbles` `lipgloss` for any interactive TUI, `modernc.org/sqlite` (pure-Go,
