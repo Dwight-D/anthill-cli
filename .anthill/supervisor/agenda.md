@@ -39,6 +39,14 @@ Updated: 2026-07-20 (install / derivation session)
   (`modelcontextprotocol/go-sdk`) available if a server surface is wanted.
   Backlog/escalation source of truth stays the markdown files in `.anthill/`.
 
+- 2026-07-20 — **Bootstrapping/integrity surface** (second role of the binary)
+  built on branch `bootstrap-cli` per `docs/BOOTSTRAP_CLI_SPEC.md`: `bootstrap`,
+  `scaffold`, `version`(+embedded ref), merged two-section `doctor`, `sync`,
+  `esc` alias. Pinned template vendored from upstream `Dwight-D/anthill@ccd6807`
+  and `go:embed`ded. Full suite green. Not yet merged to `main` — pending user
+  decision. Binary name confirmed `anthill` (the node's `anthill-cli` examples
+  are the repo name; BOOTSTRAP.md already uses `anthill`).
+
 ## Constraints
 
 - Single shared git checkout, no worktree isolation → team worker cap 2,
