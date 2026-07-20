@@ -588,39 +588,47 @@ silently deciding:
    (c) allow it but emit a loud stderr warning + require `--i-approve`.
    **Recommendation: (a)** — make the schema owner enforce the posture it
    documents.
+    **Answer**: Separate approve verb
 2. **Never-auto surface additions.** `show`, `init`, and `doctor` are new
    subcommands not literally in `bindings.md`'s target list, and adding a
    first-class subcommand is a never-auto change type. Approve these three as
    part of the v1 surface? **Recommendation: yes** — `show` is load-bearing for
    dispatch/triage, `init`/`doctor` are onboarding/health and read-only-ish.
+    **Answer**: Yes, good additions
 3. **`close --block` semantics.** Confirm block is non-terminal (file stays,
    `status: blocked`, no CHANGELOG line) while done/discard/remove are terminal
    (delete + CHANGELOG). This is my reading of `bindings.md` + the `dispatch`
    skill; worth an explicit yes.
+    **Answer**: Confirmed
 4. **Claim mechanism / locking.** With a **serial** parallelism posture, is an
    atomic compare-and-set on the `status` field sufficient, or do you want an
    explicit advisory lock (a `claimed-by`/`claimed-at` marker, a lockfile)?
    **Recommendation: CAS on status + a `claimed-at` timestamp field**, no
    lockfile — enough for serial, and orphan reclaim is `claim --force`. Revisit
    only if the posture goes parallel.
+   **Answer**: Recommendation approved
 5. **`--json` list shape.** A single JSON array (chosen here) vs newline-
    delimited JSON (NDJSON, one object per line) for streaming. **Recommendation:
    array** — the sets are small and an array is trivially `jq`-able; NDJSON only
    earns its keep at streaming scale.
+    **Answer**: Array is fine
 6. **`--hint` vs `--backlog` flag name.** `bindings.md` sketches
    `--backlog <hint>`; the schema field is `hint`. This spec uses `--hint`.
    Confirm the flag name (and whether `--backlog` should be a hidden alias).
+    **Answer**: Support both with the hidden alias
 7. **Title/value editability via `set`.** id is immutable, but may `title` and
    `value` be edited post-hoc via `set` (this spec allows it)? A title edit does
    **not** re-slug the id (id immutability wins), so the id can drift from the
    title. Accept that drift, or forbid title edits? **Recommendation: allow
    edits, accept drift** — the id is an opaque handle once assigned.
+    **Answer**: Allow edits, accept drift
 8. **`escalation` command group scope.** The escalate skill has controllers
    hand-authoring records today. Do you want the CLI to own escalation
    frontmatter (this spec's position — one schema owner for both backlog and
    escalations), or keep escalations convention-first and scope the CLI to
    backlog only? **Recommendation: CLI owns both** — same invariant-checking
    argument.
+    **Answer**: Yes, CLI owns escalations too
 
 ---
 
