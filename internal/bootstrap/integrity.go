@@ -4,7 +4,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 )
@@ -95,14 +94,24 @@ func CheckStructure(installDir string) ([]string, error) {
 	return missing, nil
 }
 
-// placeholderRe matches an un-filled <angle-bracket> template placeholder (an
-// opening '<' followed by a letter and no nested '<' or newline before '>').
-var placeholderRe = regexp.MustCompile(`<[A-Za-z][^<>\n]*>`)
+// templateMarkers are the sentinel phrases the derivation session removes from a
+// template file (the PROJECT-SPECIFIC / RUNTIME-ARTIFACT quote-blocks and the
+// <YOUR PROJECT> name placeholder). Their presence — NOT the presence of any
+// <angle-bracket> token — is what marks a file as un-derived. Legitimate
+// angle-bracket content survives derivation: schema field descriptions
+// (`<one line>`), record/filename templates (`<yyyy-mm-dd>-<slug>.md`), and the
+// per-use worker-brief skeleton (`<files/folders>`) are permanent format
+// documentation, not fill-ins, so they must not be flagged.
+var templateMarkers = []string{
+	"PROJECT-SPECIFIC",
+	"RUNTIME ARTIFACT",
+	"<YOUR PROJECT>",
+}
 
 // DerivationStatus returns the install-relative paths of .anthill/ markdown
-// files that still hold template quote-blocks ("PROJECT-SPECIFIC") or
-// <angle-bracket> fill-ins — i.e. remain un-derived. Informational: reported by
-// doctor but only a hard failure under --strict.
+// files that still hold an un-derived template quote-block (see templateMarkers)
+// — i.e. remain un-derived. Informational: reported by doctor but only a hard
+// failure under --strict.
 func DerivationStatus(installDir string) ([]string, error) {
 	anthillDir := filepath.Join(installDir, ".anthill")
 	var undrived []string
@@ -121,9 +130,12 @@ func DerivationStatus(installDir string) ([]string, error) {
 			return rerr
 		}
 		s := string(data)
-		if strings.Contains(s, "PROJECT-SPECIFIC") || placeholderRe.MatchString(s) {
-			rel, _ := filepath.Rel(installDir, path)
-			undrived = append(undrived, filepath.ToSlash(rel))
+		for _, marker := range templateMarkers {
+			if strings.Contains(s, marker) {
+				rel, _ := filepath.Rel(installDir, path)
+				undrived = append(undrived, filepath.ToSlash(rel))
+				break
+			}
 		}
 		return nil
 	})
