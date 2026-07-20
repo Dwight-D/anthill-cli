@@ -73,16 +73,23 @@ alongside its own version. Every `scaffold` writes that ref, plus the install
 date, into the new install's `.anthill/framework.md` `synced-through` field —
 the baseline `sync` and `doctor` compare against.
 
-> **EXTERNAL INPUT REQUIRED (before the embed-dependent implementation wave).**
-> The upstream framework-home repository URL and the tag/commit to vendor and
-> pin are not yet recorded here. `bootstrap` (§4.1) and the command scaffolding
-> do not depend on it; everything else does. Fill in:
-> - Upstream template repo: `<url>`
-> - Pinned ref: `<tag-or-commit>`
-> - Canonical `BOOTSTRAP.md` raw URL (for `bootstrap` to print): `<url>`
->
-> The CLI repo's CI re-vendors `internal/bootstrap/template/` from this source
-> on each tagged CLI release and updates the pinned ref.
+**Pinned source (recorded):**
+- Upstream template repo: `https://github.com/Dwight-D/anthill`
+- Pinned ref: `ccd6807ba30d85632ebd1435145b3d0d50789567`
+- Canonical `BOOTSTRAP.md` (fetchable, for `bootstrap` to print):
+  `https://raw.githubusercontent.com/Dwight-D/anthill/main/BOOTSTRAP.md`
+  (human view: `https://github.com/Dwight-D/anthill/blob/main/BOOTSTRAP.md`)
+
+The payload vendored at that ref lives in `internal/bootstrap/template/` (33
+files: the nine pristine skills, the `.anthill/` placeholder tree, `tools/`,
+`CLAUDE.template.md`, `.gitignore`). The pinned ref and the BOOTSTRAP URL are
+Go constants in `internal/bootstrap` (`TemplateRef`, `BootstrapDocURL`). The CLI
+repo's CI re-vendors `internal/bootstrap/template/` from this source on each
+tagged CLI release and updates `TemplateRef`.
+
+Note the payload deliberately excludes the framework home's own `README.md`,
+`INSTALLATION.md`, `CLAUDE.md`, `CLI_SPEC.md`, and `BOOTSTRAP.md` — those are
+authoritative docs fetched from upstream, not scaffolded into a consumer.
 
 ## 4. Commands
 
