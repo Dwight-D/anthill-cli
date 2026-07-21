@@ -78,7 +78,7 @@ anthill scaffold
 anthill doctor
 ```
 
-`scaffold` writes the ten general-tier skills, the `.anthill/` placeholder tree,
+`scaffold` writes the eleven general-tier skills, the `.anthill/` placeholder tree,
 `CLAUDE.template.md`, `tools/`, and `.gitignore`, and stamps the pinned template
 ref into `.anthill/framework.md`. It never overwrites a file you have derived
 without `--force`. After scaffolding you derive the specific-tier placeholders

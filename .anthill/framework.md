@@ -10,8 +10,8 @@ upgrade procedure re-copies changed general-tier skills and bumps the
 - **Framework source:** the upstream Anthill repository
   (https://github.com/Dwight-D/anthill) — the framework's source of truth. Its
   `.claude/skills/` are the canonical general-tier texts.
-- **synced-through:** 3797138ddd5eb6e89d083aa001156d4d28fefe18 (installed
-  2026-07-20). This is the embedded template ref the `anthill` CLI pins;
+- **synced-through:** 8fa21a2619b892245344793cf4d65a426ed1d8e6 (installed
+  2026-07-21). This is the embedded template ref the `anthill` CLI pins;
   `anthill doctor` / `sync` read it as the baseline.
 
 ## Two-tier discipline (how this installation stays upgradeable)
@@ -24,8 +24,8 @@ it never touches.
   across installations is the failure mode the split exists to prevent:
   - the `.claude/skills/` orchestration skills (`supervisor`, `autonomous`,
     `triage`, `submit`, `dispatch`, `dispatch-loop`, `dispatch-receive`,
-    `expedite`, `escalate`, `wake-up`), byte-identical to upstream with no
-    exceptions, and
+    `expedite`, `escalate`, `wake-up`, `sync`), byte-identical to upstream with
+    no exceptions, and
   - the **framework-invariant** files: the `.anthill/` reference READMEs, the
     supervisor brief template, and the `tools/` launchers.
 
@@ -65,3 +65,9 @@ framework-invariant files) and the bump.
   moved the Go proceed-list and decisions-log path into the new
   `.anthill/autonomy.md`. This retires the last in-skill adaptation region — the
   general tier is now byte-identical to upstream with no exceptions.
+- 2026-07-21 — synced to ref 8fa21a2 (CLI 0.0.5). Added the `sync` general-tier
+  skill (eleventh) and re-copied the updated `dispatch-loop`, `supervisor`, and
+  `wake-up` skills verbatim; adopted the new `.anthill/dispatch/` subtree
+  (dispatcher ledger + control flag, seeded on first use). Also reconciled the
+  drifted `.anthill/README.md` — now that `sync` covers framework-invariant
+  non-skill files, it restored the copy left stale by the skills-only sync.

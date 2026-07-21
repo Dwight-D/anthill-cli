@@ -59,9 +59,11 @@ through permission prompts.
 ## Steering
 
 - Every wake-up (message, silence-check, rehydration) starts with the
-  wake-up protocol (`wake-up` skill), before other steering. The crossed-
-  messages and bounded-silence rules below are instances of its
-  signals-are-hints stance — trust task state, not the message.
+  wake-up protocol (`wake-up` skill), before other steering. That drain
+  includes your durable control flag `.anthill/supervisor/control.md`
+  (pause/stop) — honor it before issuing work. The crossed-messages and
+  bounded-silence rules below are instances of its signals-are-hints stance —
+  trust task state, not the message.
 - Bounded reads: never replay worker output; truth = task state + worker
   messages. Summarize to the user, never forward raw.
 - Crossed messages: on an idle notification, check the task list; task
@@ -125,9 +127,11 @@ per deliverable class: see bindings.
 `agenda.md` holds ONLY user intent — goals, directives, priorities,
 constraints. No findings, no progress (recreate those from the task
 board, git log, and decision log). Update it whenever user intent
-changes. On supervisor context degradation: land worker state, tear down,
-end; a successor bootstraps from bindings → agenda → task board →
-decision log.
+changes. In the controller state model (`wake-up`), `agenda.md` is your
+*intent* and the task board is your *position*; the task board already
+records batch position, so you keep no separate progress ledger. On
+supervisor context degradation: land worker state, tear down, end; a
+successor bootstraps from bindings → agenda → task board → decision log.
 
 ## Standing improvement duty
 

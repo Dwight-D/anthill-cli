@@ -36,15 +36,39 @@ latency; they may never carry an obligation that exists nowhere else.**
   step N" line bolted onto one workflow. That patches one workflow, leaves
   every other exposed, and fires as noise on every empty iteration.
 
+## Controller state model
+
+Everything a controller relies on across turns lives in durable state outside
+its window, in three categories with distinct trust rules:
+
+- **Intent** — what the user wants (goals, directives, constraints).
+  Human-owned, authoritative, changed only when the user changes it (the
+  supervisor's `agenda.md`).
+- **Position** — where the work is: task-board state, backlog item statuses,
+  and a controller's cursor through a framed batch (a *progress ledger*).
+  Volatile. Re-derived from its authoritative source on every wake-up (refresh
+  before acting); never trusted from a prior turn's read.
+- **Control** — a durable pause/stop/resume flag for the controller itself,
+  read on every drain (see *Durable control* below).
+
+A **progress ledger** captures the one piece of position no other durable
+source records: a controller's place in a *framed* unit of work — an ordered
+list of units plus its framing (report-target, reporting cadence, origin). A
+cold successor rehydrates its cursor from the ledger, losing no ordering or
+framing. Bare unordered queue-work needs no ledger — its position rehydrates
+from the queue itself. The ledger holds position only: never a unit's content
+(that lives in the unit), never findings.
+
 ## The protocol (on EVERY wake-up, before other work)
 
 A **wake-up** is any point where you regain control: skill invocation, an
 incoming message, a loop-iteration boundary, a silence-check, rehydration
 after respawn. On each, in order:
 
-1. **Drain signals.** Read all pending messages/notifications. Take from
-   each only what it points at; discard any assumption about its freshness
-   or ordering.
+1. **Drain signals.** Read all pending messages/notifications, and your tier's
+   durable control flag (state, not a message — it gates whether you advance at
+   all; see *Durable control*). Take from each only what it points at; discard
+   any assumption about its freshness or ordering.
 2. **Sweep escalations.** Process `.anthill/escalations/` records addressed
    to your tier per the `escalate` skill (absorb / annotate-and-raise /
    apply answered ones).
@@ -56,11 +80,41 @@ after respawn. On each, in order:
    sweep produce no log line, no report, no task, no artifact. The cost is
    a mailbox read plus a directory listing.
 
-## Loop shaping (latency only)
+## Durable control (pause / stop)
 
-A loop that runs many iterations inside one long turn starves its own
-inbox — the iteration-start drain is its only guaranteed read point.
-Prefer many short turns over one long turn where the harness supports
-re-waking; where it doesn't, keep iterations short and treat the iteration
-boundary as the designated wake-up. This shapes latency only; correctness
-is already guaranteed by the invariant.
+A control order that exists only as a chat message can be lost or misrouted
+(cross-tier flattening) and then never honored. So a controller's pause/stop is
+durable state, not a message: the parent (or user) writes the control flag —
+state first — then optionally pings. The controller reads the flag on every
+wake-up drain, before selecting or advancing work, and acknowledges by landing
+state: `pause` stands down without tearing down and keeps draining until `run`
+returns; `stop` runs wrap-up and ends. A lost ping is harmless — the next drain
+reads the flag. The flag lives in the controller's tier config home (e.g.
+`.anthill/dispatch/control.md`, `.anthill/supervisor/control.md`).
+
+## Turn-boundary discipline
+
+Messages land only between your turns, so a turn boundary is your only
+inbox-drain point. A loop that runs many iterations inside one long turn
+starves its own inbox — and for a controller that spawns workers, that is a
+correctness failure, not just latency: while blocked in-turn waiting on a
+worker it cannot drain, so it cannot honor a pause, acknowledge its parent, or
+report between units. The realized failure: a dispatcher told to work a batch
+one at a time, reporting between each, ran the whole batch in a single turn and
+never yielded — no reports, and pause orders that never reached it.
+
+So a worker-spawning controller **never blocks in-turn waiting on a worker. A
+wait is a turn boundary.** Land position (ledger/board) durably, end the turn,
+and let the worker's completion notification re-wake you to verify and advance.
+Every wait then becomes a drain point for free.
+
+Re-wake is itself a best-effort signal — a lost completion notification must
+not hang the controller. Back it with a bounded-silence fallback: on a periodic
+tick (or the next drain), re-derive worker liveness from durable state (the
+orphan/liveness check) and proceed. Correctness never depends on the
+notification arriving; it only shortens latency.
+
+Distinguish two cadences: **yield** (end the turn, same controller identity —
+cheap, at every wait) from **recycle** (tear down and cold-respawn — expensive,
+on count or a heavy window). Yield often; recycle occasionally; a cold
+successor rehydrates from durable state either way.

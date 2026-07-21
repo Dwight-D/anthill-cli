@@ -24,8 +24,8 @@ func TestDoctorGreenOnDerivedInstall(t *testing.T) {
 	// remaining template quote-blocks.
 	wantNonZero(t, runInDir(t, dir, "doctor", "--strict"))
 
-	// Replace the seven derive-target files (the ones carrying template
-	// quote-blocks) with valid, marker-free derived content. framework.md keeps a
+	// Replace the derive-target files (the ones carrying template quote-blocks)
+	// with valid, marker-free derived content. framework.md keeps a
 	// parseable synced-through at the embedded ref (sync-status), and
 	// workstreams.md keeps a valid sweep-order naming existing dirs (Section B).
 	writeRaw(t, filepath.Join(dir, ".anthill", "backlog", "workstreams.md"),
@@ -40,6 +40,10 @@ func TestDoctorGreenOnDerivedInstall(t *testing.T) {
 		"# Supervisor bindings\n\nWorker cap 2, serial dispatch. Derived.\n")
 	writeRaw(t, filepath.Join(dir, ".anthill", "supervisor", "agenda.md"),
 		"# Agenda\n\n## Standing goals\n- Ship the product.\n")
+	writeRaw(t, filepath.Join(dir, ".anthill", "dispatch", "control.md"),
+		"# Dispatch control flag\n\nRun. Derived/seeded for the test project.\n")
+	writeRaw(t, filepath.Join(dir, ".anthill", "dispatch", "ledger.md"),
+		"# Dispatch progress ledger\n\nNo rows yet. Seeded for the test project.\n")
 	writeRaw(t, filepath.Join(dir, ".anthill", "framework.md"),
 		"# Anthill framework — provenance & sync state\n\n- **synced-through:** "+ref+" (installed 2026-07-20)\n")
 

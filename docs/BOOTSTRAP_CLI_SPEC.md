@@ -49,7 +49,7 @@ fixed release) and lets `scaffold`/`doctor` work offline.
 Vendored into the CLI repo under `internal/bootstrap/template/` and embedded
 whole. Contents (the mechanical half of an install):
 
-- `.claude/skills/` — the nine general-tier skills, **pristine** (no project
+- `.claude/skills/` — the eleven general-tier skills, **pristine** (no project
   adaptations; in particular the `autonomous` skill carries its upstream
   placeholder proceed-list and decisions-log path).
 - `.anthill/` — the placeholder config tree with template quote-blocks and
@@ -75,7 +75,7 @@ the baseline `sync` and `doctor` compare against.
 
 **Pinned source (recorded):**
 - Upstream template repo: `https://github.com/Dwight-D/anthill`
-- Pinned ref: `ccd6807ba30d85632ebd1435145b3d0d50789567`
+- Pinned ref: `8fa21a2619b892245344793cf4d65a426ed1d8e6`
 - Canonical `BOOTSTRAP.md` (fetchable, for `bootstrap` to print):
   `https://raw.githubusercontent.com/Dwight-D/anthill/main/BOOTSTRAP.md`
   (human view: `https://github.com/Dwight-D/anthill/blob/main/BOOTSTRAP.md`)
@@ -117,7 +117,7 @@ user."). Zero side effects — safe to run in any directory, in or out of a repo
 ### 4.2 `anthill scaffold [--into <dir>] [--force] [--dry-run]`
 
 The mechanical install. Into `<dir>` (default: current directory) writes, from
-the embedded pinned template: the nine general-tier skills verbatim, the
+the embedded pinned template: the eleven general-tier skills verbatim, the
 `.anthill/` placeholder tree (quote-blocks intact) with empty runtime dirs,
 `CLAUDE.template.md`, `tools/`, and `.gitignore`; then stamps
 `.anthill/framework.md` `synced-through` with the embedded ref + install date.

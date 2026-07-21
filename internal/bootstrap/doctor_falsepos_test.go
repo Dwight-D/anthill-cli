@@ -67,6 +67,7 @@ func TestCheckStructureIgnoresWorkstreamRename(t *testing.T) {
 		".anthill/backlog/intake",
 		".anthill/backlog/cli",
 		".anthill/backlog/bugs",
+		".anthill/dispatch",
 		".anthill/escalations",
 		".anthill/supervisor/scratchpad",
 	)

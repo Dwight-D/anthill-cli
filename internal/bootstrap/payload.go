@@ -77,6 +77,7 @@ func ReadTemplateFile(p string) ([]byte, error) {
 var frameworkInvariantFiles = []string{
 	".anthill/README.md",
 	".anthill/backlog/README.md",
+	".anthill/dispatch/README.md",
 	".anthill/escalations/README.md",
 	".anthill/supervisor/brief-template.md",
 	".anthill/supervisor/scratchpad/README.md",

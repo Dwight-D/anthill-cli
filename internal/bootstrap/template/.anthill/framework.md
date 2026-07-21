@@ -29,7 +29,7 @@ adapt (`sync` never touches them).
   every sync, restored on `--force`:
   - the `.claude/skills/` orchestration skills (`supervisor`, `autonomous`,
     `triage`, `submit`, `dispatch`, `dispatch-loop`, `dispatch-receive`,
-    `expedite`, `escalate`, `wake-up`), and
+    `expedite`, `escalate`, `wake-up`, `sync`), and
   - the **framework-invariant** files: the `.anthill/` reference READMEs, the
     supervisor brief template, and the `tools/` launchers.
 
