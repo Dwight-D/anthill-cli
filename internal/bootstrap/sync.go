@@ -39,7 +39,8 @@ const claudeTemplateRelPath = "CLAUDE.template.md"
 //
 // The line between "safe to create" and "disposable derive-source" is currently
 // hardcoded here; upstream anthill publishing a per-file sync-class schema would
-// let the CLI derive it instead (see the framework-gap note).
+// let the CLI derive it instead (filed: Dwight-D/anthill#3, recorded in
+// .anthill/framework.md).
 func createBlocklistPath(p string) bool {
 	if p == gitignoreRelPath || p == claudeTemplateRelPath {
 		return true

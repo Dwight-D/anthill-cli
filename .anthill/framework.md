@@ -46,6 +46,16 @@ repository (an issue or PR) — never fixed by editing a local skill. If you nee
 a mitigation NOW, put it in `.anthill/` config and name it in the upstream
 report so the maintainer can supersede it.
 
+**Open framework gaps (filed upstream):**
+
+- **[Dwight-D/anthill#3](https://github.com/Dwight-D/anthill/issues/3)** —
+  requests a machine-readable per-file *sync-class* schema in the payload so the
+  CLI stops hardcoding which files are synced / structural / seed / derived /
+  derive-source, and asks to split the blended `framework.md` and
+  `backlog/bindings.md` into synced + derived parts. Mitigation until then: the
+  CLI hardcodes the classification (`frameworkInvariantFiles` allowlist and the
+  `createBlocklistPath` skip-list in `internal/bootstrap`).
+
 ## Sync downstream (periodically)
 
 Compare `synced-through` above against the upstream Anthill repository's latest
