@@ -336,6 +336,67 @@ func TestFrameworkInvariantFilesAreValid(t *testing.T) {
 	}
 }
 
+// TestSyncCreatesAbsentScaffoldFile covers the create-if-absent pass: a payload
+// file missing from the install (e.g. a seed-on-first-use runtime artifact from
+// a newly added upstream subtree) is written verbatim and reported in Created.
+func TestSyncCreatesAbsentScaffoldFile(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Scaffold(dir, false, false); err != nil {
+		t.Fatalf("Scaffold: %v", err)
+	}
+	const target = ".anthill/dispatch/ledger.md"
+	path := filepath.Join(dir, filepath.FromSlash(target))
+	if err := os.Remove(path); err != nil {
+		t.Fatalf("remove target: %v", err)
+	}
+
+	res, err := Sync(dir, false, false)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if !contains(res.Created, target) {
+		t.Fatalf("absent scaffold file should be created; created=%v", res.Created)
+	}
+	got, rerr := os.ReadFile(path)
+	if rerr != nil {
+		t.Fatalf("file not created: %v", rerr)
+	}
+	if want := mustReadTemplate(t, target); string(got) != string(want) {
+		t.Fatal("created file is not the verbatim template version")
+	}
+}
+
+// TestSyncDoesNotResurrectRenamedWorkstream guards the create-if-absent
+// exclusion: the template ships example backlog workstream dirs (product/, …),
+// but a derivation renames/drops them — so sync must NOT recreate a template
+// workstream's files in an install that no longer has that stream.
+func TestSyncDoesNotResurrectRenamedWorkstream(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := Scaffold(dir, false, false); err != nil {
+		t.Fatalf("Scaffold: %v", err)
+	}
+	// Simulate a derivation: the product stream was renamed to app.
+	if err := os.RemoveAll(filepath.Join(dir, filepath.FromSlash(".anthill/backlog/product"))); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, filepath.FromSlash(".anthill/backlog/app")), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Sync(dir, false, false)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	for _, p := range res.Created {
+		if strings.Contains(p, "backlog/product") {
+			t.Fatalf("sync resurrected a renamed workstream: created=%v", res.Created)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(".anthill/backlog/product"))); !os.IsNotExist(err) {
+		t.Fatal("product/ workstream must not be recreated by sync")
+	}
+}
+
 // TestSyncReconcilesFrameworkInvariantFile covers the widened sync scope: a
 // non-skill framework-invariant file follows upstream exactly like a skill —
 // re-copied verbatim when the install is behind, and a conflict when locally

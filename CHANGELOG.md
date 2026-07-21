@@ -18,9 +18,15 @@ Release notes for the Anthill CLI. Newest first.
 - **`sync` scope widened beyond skills.** In addition to the general-tier
   skills, `sync` now reconciles the **framework-invariant** non-skill files (the
   `.anthill/` reference READMEs, the supervisor brief template, and the `tools/`
-  launchers) byte-identical to the embedded template. Project-derived config and
-  runtime state are still never touched. This closes the gap where upstream doc
-  and launcher updates could only arrive via a re-scaffold.
+  launchers) byte-identical to the embedded template. It also **creates any
+  payload file absent from the install** (`created` in `--json`) — a
+  non-destructive write that carries new upstream scaffold files and whole
+  subtrees (e.g. a newly added `.anthill/` mechanism or required structural dir)
+  to a sync-upgraded install without a re-scaffold. Existing project-derived
+  config and runtime state are never overwritten; `.gitignore`, the disposable
+  `CLAUDE.template.md` starter, and per-workstream files are excluded from
+  creation. This closes the gap where new upstream scaffold content could only
+  arrive via a re-scaffold.
 
 ### Added
 

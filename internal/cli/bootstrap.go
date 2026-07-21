@@ -159,6 +159,7 @@ type syncView struct {
 	Updated   []string `json:"updated"`
 	Unchanged []string `json:"unchanged"`
 	Conflicts []string `json:"conflicts"`
+	Created   []string `json:"created"`
 	FromRef   string   `json:"from_ref"`
 	ToRef     string   `json:"to_ref"`
 }
@@ -173,9 +174,12 @@ func (a *App) newSyncCommand() *cobra.Command {
 			"synced-through. It reconciles the general-tier skills plus the framework-invariant " +
 			"non-skill files (the .anthill/ reference READMEs, the supervisor brief template, and " +
 			"the tools/ launchers). Project-derived files (workstreams, bindings, autonomy, " +
-			"resources) and runtime state (changelogs, logs, agenda) are never touched. Every " +
+			"resources) and runtime state (changelogs, logs, agenda) are never overwritten. Every " +
 			"unit is compared byte-for-byte with no exceptions; one carrying an unexpected local " +
-			"edit is reported as a conflict and left unchanged unless --force.",
+			"edit is reported as a conflict and left unchanged unless --force. A final pass " +
+			"creates any other payload file that is absent from the install (new upstream " +
+			"scaffold files and subtrees) — a non-destructive write that never clobbers an " +
+			"existing file.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := a.resolveRoot()
@@ -190,6 +194,7 @@ func (a *App) newSyncCommand() *cobra.Command {
 				Updated:   orEmpty(res.Updated),
 				Unchanged: orEmpty(res.Unchanged),
 				Conflicts: orEmpty(res.Conflicts),
+				Created:   orEmpty(res.Created),
 				FromRef:   res.FromRef,
 				ToRef:     res.ToRef,
 			}
@@ -217,11 +222,14 @@ func (a *App) printSyncManifest(v syncView, dryRun bool) {
 	if dryRun {
 		prefix = "(dry-run) "
 	}
-	a.answer("%ssync: %d updated, %d unchanged, %d conflicts — %s → %s",
-		prefix, len(v.Updated), len(v.Unchanged), len(v.Conflicts),
+	a.answer("%ssync: %d updated, %d created, %d unchanged, %d conflicts — %s → %s",
+		prefix, len(v.Updated), len(v.Created), len(v.Unchanged), len(v.Conflicts),
 		shortRef(v.FromRef), shortRef(v.ToRef))
 	for _, s := range v.Updated {
 		a.answer("  ~ %s (re-copied verbatim)", s)
+	}
+	for _, s := range v.Created {
+		a.answer("  + %s (created — was absent)", s)
 	}
 	for _, s := range v.Conflicts {
 		a.answer("  ! %s (upstream change collides with a local edit — use --force)", s)

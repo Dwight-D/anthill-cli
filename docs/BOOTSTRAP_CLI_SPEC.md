@@ -202,12 +202,22 @@ ref.
   already claims the embedded ref is an unexpected local edit → reported as a
   conflict and left unchanged (exit 3) unless `--force`. A unit that differs on a
   behind install is an upstream update → re-copied verbatim.
+- **Create-if-absent (any other payload file).** After the units, a final pass
+  writes any remaining payload file that is **absent** from the install
+  (`created`). A creation cannot clobber anything, so it is always safe — this
+  carries new upstream scaffold files and whole subtrees (e.g. a newly added
+  `.anthill/` mechanism, or a required structural dir) to a sync-upgraded
+  install. Excluded from creation: `.gitignore` (scaffold-merged) and files
+  under a project-defined backlog workstream dir (creating those would resurrect
+  a stream a derivation renamed or dropped). An existing file is never
+  overwritten by this pass.
 - **Flags.** `--dry-run` show the diff without applying; `--force` apply even
   when a unit has an unexpected local edit (overwrites it — the diff is shown
   first).
 - **`--json`.** `{ "updated": [...], "unchanged": [...], "conflicts": [...],
-  "from_ref": "<old>", "to_ref": "<new>" }`. List entries are skill names or
-  framework-invariant file paths.
+  "created": [...], "from_ref": "<old>", "to_ref": "<new>" }`. Unit entries are
+  skill names or framework-invariant file paths; `created` entries are payload
+  file paths.
 - **Exit codes.** 0 applied (or clean `--dry-run`); 3 on an unresolved
   conflict without `--force`.
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // SyncResult is the outcome of a sync (or dry-run plan): which reconciled units
@@ -14,8 +15,42 @@ type SyncResult struct {
 	Updated   []string // units re-copied verbatim to the embedded version
 	Unchanged []string // units already byte-identical to the embedded version
 	Conflicts []string // units with an unexpected local edit (need --force to overwrite)
+	Created   []string // payload files absent from the install, written verbatim (safe: nothing to clobber)
 	FromRef   string   // the install's synced-through ref before sync ("" if unstamped)
 	ToRef     string   // the embedded template ref
+}
+
+// claudeTemplateRelPath is the always-on-file starter. Unlike the in-place
+// derive targets, it is consumed into a DIFFERENT file (the user's CLAUDE.md)
+// and then legitimately removed — so recreating it would resurrect an
+// un-derived starter, not restore a missing structural file.
+const claudeTemplateRelPath = "CLAUDE.template.md"
+
+// createBlocklistPath reports whether a payload path must be skipped by sync's
+// create-if-absent pass — i.e. creating it (even when absent) is NOT safe:
+//   - .gitignore is scaffold-merged into the consumer's own file, never written
+//     standalone;
+//   - CLAUDE.template.md is a disposable derive-source (its output is the user's
+//     CLAUDE.md, at a different path);
+//   - files under a project-defined backlog workstream dir
+//     (.anthill/backlog/<ws>/… with <ws> != intake) would resurrect a stream a
+//     derivation renamed or dropped (the template ships example streams like
+//     product/ that a real install replaces).
+//
+// The line between "safe to create" and "disposable derive-source" is currently
+// hardcoded here; upstream anthill publishing a per-file sync-class schema would
+// let the CLI derive it instead (see the framework-gap note).
+func createBlocklistPath(p string) bool {
+	if p == gitignoreRelPath || p == claudeTemplateRelPath {
+		return true
+	}
+	const backlogPrefix = ".anthill/backlog/"
+	if rest, ok := strings.CutPrefix(p, backlogPrefix); ok {
+		if i := strings.IndexByte(rest, '/'); i >= 0 && rest[:i] != "intake" {
+			return true
+		}
+	}
+	return false
 }
 
 // syncUnit is one reconcilable payload unit: a display label (a skill name or a
@@ -62,6 +97,11 @@ func syncedUnits() ([]syncUnit, error) {
 //     embedded ref is treated as an unexpected local edit → Conflict (needs
 //     --force to overwrite); otherwise (the install is behind) a difference is an
 //     upstream update and the unit is re-copied verbatim → Updated.
+//
+// A second pass creates any OTHER payload file that is absent from the install
+// (Created) — a non-destructive write that carries new upstream scaffold files
+// and subtrees to a sync-upgraded install. See createBlocklistPath for the
+// paths excluded from creation.
 //
 // On a clean apply the synced-through baseline is bumped to the embedded ref.
 // With unresolved conflicts and no force, nothing is bumped and the caller maps
@@ -122,17 +162,50 @@ func Sync(installDir string, dryRun, force bool) (*SyncResult, error) {
 			res.Unchanged = append(res.Unchanged, u.label)
 		}
 	}
+	// Create-if-absent pass. Any other payload file missing from the install is
+	// written verbatim. A creation cannot clobber anything (the target is
+	// absent), so it is always safe — this is how new upstream scaffold files and
+	// whole subtrees (e.g. a newly added .anthill/ mechanism, or a required
+	// structural dir) reach an install that upgrades via sync instead of a
+	// re-scaffold. Files already covered by a reconciled unit are handled above;
+	// createBlocklistPath excludes the paths that are unsafe to create.
+	unitPaths := map[string]bool{}
+	for _, u := range units {
+		for _, p := range u.paths {
+			unitPaths[p] = true
+		}
+	}
+	payload, err := PayloadFiles()
+	if err != nil {
+		return nil, err
+	}
+	var toCreate []string
+	for _, p := range payload {
+		if unitPaths[p] || createBlocklistPath(p) {
+			continue
+		}
+		dest := filepath.Join(installDir, filepath.FromSlash(p))
+		_, serr := os.Stat(dest)
+		if os.IsNotExist(serr) {
+			toCreate = append(toCreate, p)
+		} else if serr != nil {
+			return nil, serr
+		}
+	}
+	res.Created = toCreate
+
 	sort.Strings(res.Updated)
 	sort.Strings(res.Unchanged)
 	sort.Strings(res.Conflicts)
+	sort.Strings(res.Created)
 
 	unresolved := len(res.Conflicts) > 0
 	if dryRun {
 		return res, nil
 	}
 
-	// Apply verbatim writes for Updated skills.
-	for _, p := range toWrite {
+	// Apply verbatim writes for Updated units and create-if-absent files.
+	for _, p := range append(toWrite, toCreate...) {
 		data, rerr := ReadTemplateFile(p)
 		if rerr != nil {
 			return nil, rerr
