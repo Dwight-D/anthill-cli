@@ -57,7 +57,12 @@ func (a *App) newInitCommand() *cobra.Command {
 					return internalErr(err.Error())
 				}
 			}
-			ws := "---\nsweep-order: " + strings.Join(streams, ", ") + "\nnever-implicit:\n---\n\n# Backlog workstreams\n"
+			ws := "---\n" +
+				"sweep-order: " + strings.Join(streams, ", ") + "\n" +
+				"never-implicit:\n" +
+				"change-types: doc, tooling, bugfix, audit, verify, rename, removal, design, subjective\n" +
+				"never-auto-change-types: rename, removal, design, subjective\n" +
+				"---\n\n# Backlog workstreams\n"
 			files := map[string]string{
 				filepath.Join(anthill, "backlog", "CHANGELOG.md"):   "# Improvement Changelog\n\nOne line per closed item, newest first.\n\n## Done\n\n## Discarded (triaged out, not done)\n",
 				filepath.Join(anthill, "backlog", "workstreams.md"): ws,
@@ -217,10 +222,25 @@ func (a *App) sectionBChecks(root string) []checkResult {
 	res, err := store.Validate(true)
 	if err != nil {
 		checks = append(checks, checkResult{"B", "backlog-valid", false, err.Error(), sevHard})
-	} else if res.OK {
-		checks = append(checks, checkResult{"B", "backlog-valid", true, fmt.Sprintf("%d items clean", res.Checked), sevHard})
 	} else {
-		checks = append(checks, checkResult{"B", "backlog-valid", false, fmt.Sprintf("%d violations", len(res.Violations)), sevHard})
+		if res.OK {
+			checks = append(checks, checkResult{"B", "backlog-valid", true, fmt.Sprintf("%d items clean", res.Checked), sevHard})
+		} else {
+			checks = append(checks, checkResult{"B", "backlog-valid", false, fmt.Sprintf("%d violations", len(res.Violations)), sevHard})
+		}
+		// change-type vocabulary: advisory only. An item using a change-type
+		// outside the project's declared set warns but never fails doctor —
+		// the vocabulary is the project's to own (declared in workstreams.md).
+		if len(res.Warnings) == 0 {
+			checks = append(checks, checkResult{"B", "change-type-vocab", true, "all change-types within declared vocabulary", sevInfo})
+		} else {
+			var ids []string
+			for _, w := range res.Warnings {
+				ids = append(ids, w.ID)
+			}
+			checks = append(checks, checkResult{"B", "change-type-vocab", false,
+				fmt.Sprintf("%d item(s) use an undeclared change-type: %s", len(res.Warnings), strings.Join(ids, ", ")), sevInfo})
+		}
 	}
 
 	estore, _ := a.escalationStore()
@@ -339,18 +359,25 @@ func (a *App) newValidateCommand() *cobra.Command {
 					"ok":                  ok,
 					"checked":             res.Checked,
 					"violations":          res.Violations,
+					"warnings":            res.Warnings,
 					"escalation_problems": problems,
 				}); jerr != nil {
 					return jerr
 				}
-			} else if ok {
-				a.note("ok: %d backlog items, escalations well-formed", res.Checked)
 			} else {
-				for _, v := range res.Violations {
-					a.note("%s [%s]: %s", v.ID, v.Check, v.Message)
+				if ok {
+					a.note("ok: %d backlog items, escalations well-formed", res.Checked)
+				} else {
+					for _, v := range res.Violations {
+						a.note("%s [%s]: %s", v.ID, v.Check, v.Message)
+					}
+					for _, p := range problems {
+						a.note("escalation %s", p)
+					}
 				}
-				for _, p := range problems {
-					a.note("escalation %s", p)
+				// Warnings are advisory — printed regardless of ok, never affect exit.
+				for _, w := range res.Warnings {
+					a.note("warn: %s [%s]: %s", w.ID, w.Check, w.Message)
 				}
 			}
 			if !ok {

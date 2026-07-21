@@ -161,3 +161,82 @@ func TestValidateStrictCatchesReadyInconsistency(t *testing.T) {
 		t.Fatalf("missing ready-consistency violation: %+v", res.Violations)
 	}
 }
+
+// writeWorkstreamsFrontmatter overwrites the store's workstreams.md with the
+// given frontmatter body (between the --- fences).
+func writeWorkstreamsFrontmatter(t *testing.T, s *Store, fm string) {
+	t.Helper()
+	content := "---\n" + fm + "---\n\n# Backlog workstreams\n"
+	if err := os.WriteFile(filepath.Join(s.dir(), "workstreams.md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// writeApprovedItem hand-writes a ready cli/ item with the given change-type and
+// disposition (verify non-none, so only the change-type/disposition are at play).
+func writeApprovedItem(t *testing.T, s *Store, id, changeType, disposition string) {
+	t.Helper()
+	content := "---\nworkstream: cli\ntitle: t\nvalue: v\nchange-type: " + changeType +
+		"\nrisk: additive\nverify: go test ./...\nvalue-verdict: ADVANCE — x\ndisposition: " +
+		disposition + "\nstatus: approved\n---\n"
+	if err := os.WriteFile(filepath.Join(s.wsDir("cli"), id+".md"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestValidateChangeTypeVocabularyWarns: a change-type outside the project's
+// declared vocabulary is a warning, not a violation, and never fails validation.
+func TestValidateChangeTypeVocabularyWarns(t *testing.T) {
+	s := newTestStore(t)
+	writeWorkstreamsFrontmatter(t, s, "sweep-order: bugs, cli, dev, process\nnever-implicit:\nchange-types: doc, tooling\n")
+	writeApprovedItem(t, s, "good", "doc", "REVIEW")
+	writeApprovedItem(t, s, "bad", "wildcard", "REVIEW")
+
+	res, err := s.Validate(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK {
+		t.Fatalf("out-of-vocabulary change-type must not fail validation; violations=%+v", res.Violations)
+	}
+	if len(res.Warnings) != 1 || res.Warnings[0].ID != "bad" || res.Warnings[0].Check != "change-type-vocab" {
+		t.Fatalf("expected one change-type-vocab warning for 'bad', got %+v", res.Warnings)
+	}
+}
+
+// TestValidateChangeTypeFreeFormWhenUndeclared: with no declared vocabulary, any
+// change-type is accepted with no warning.
+func TestValidateChangeTypeFreeFormWhenUndeclared(t *testing.T) {
+	s := newTestStore(t) // newTestStore declares no change-types
+	writeApprovedItem(t, s, "anything", "some-novel-type", "REVIEW")
+
+	res, err := s.Validate(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !res.OK || len(res.Warnings) != 0 {
+		t.Fatalf("undeclared vocabulary must be free-form (no warnings); ok=%v warnings=%+v", res.OK, res.Warnings)
+	}
+}
+
+// TestValidateNeverAutoFromConfig: never-auto-change-types in workstreams.md
+// drives the disposition-coherence check (AUTO on a never-auto type is illegal).
+func TestValidateNeverAutoFromConfig(t *testing.T) {
+	s := newTestStore(t)
+	writeWorkstreamsFrontmatter(t, s, "sweep-order: bugs, cli, dev, process\nnever-implicit:\nchange-types: doc, design\nnever-auto-change-types: design\n")
+	writeApprovedItem(t, s, "auto-design", "design", "AUTO")
+
+	res, err := s.Validate(true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, v := range res.Violations {
+		if v.Check == "disposition-coherence" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected disposition-coherence violation for AUTO on never-auto type; got %+v", res.Violations)
+	}
+}

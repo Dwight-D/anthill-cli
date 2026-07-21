@@ -1,6 +1,8 @@
 ---
 sweep-order: bugs, cli, dev, process
 never-implicit:
+change-types: doc, tooling, bugfix, audit, verify, new-command, new-flag, rename, removal, design, subjective
+never-auto-change-types: new-command, new-flag, rename, removal, design, subjective
 ---
 
 # Backlog workstreams — Anthill CLI
@@ -13,6 +15,12 @@ The frontmatter above is the machine-readable contract:
 - **sweep-order** — the order bare `dispatch` walks workstreams.
 - **never-implicit** — workstreams only ever dispatched deliberately (never
   swept by bare `dispatch`). Empty here: every stream is sweepable.
+- **change-types** — the project's change-type vocabulary: the menu triage
+  picks from. The CLI does not hardcode it; an item using a change-type outside
+  this set is a `validate`/`doctor` **warning**, never a hard failure.
+- **never-auto-change-types** — the subset of change-types that can never carry
+  `disposition: AUTO` (permanent, cross-cutting, or taste-laden). Enforced as a
+  hard `disposition-coherence` violation under `validate --strict` / `doctor`.
 
 A workstream's identity is its **directory name** under
 `.anthill/backlog/`. Every stream below must have a matching directory.

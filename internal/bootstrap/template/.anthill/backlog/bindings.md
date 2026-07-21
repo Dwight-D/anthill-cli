@@ -36,9 +36,10 @@ title:        <one line>
 value:        <the pain it removes or the potential it unlocks>
 source:       <where it came up>                                  # optional
 hint:         <non-binding submitter hint at submit time; removed on triage> # optional
-change-type:  <your domain's change-type vocabulary — e.g. doc | default |
-              option | tooling | bugfix | audit | verify | new-<primitive> |
-              rename | removal | design | subjective>
+change-type:  <your domain's change-type vocabulary, declared in workstreams.md
+              `change-types` — e.g. doc | default | option | tooling | bugfix |
+              audit | verify | new-<primitive> | rename | removal | design |
+              subjective; out-of-vocabulary values warn, never fail>
 risk:         additive | reversible | behavior-change | subjective
 verify:       <headless acceptance test, or "none">
 value-verdict: ADVANCE | HOLD | DISCARD — <one-line why>

@@ -335,7 +335,10 @@ Human output · `--json` output · Exit codes.**
      lifecycle stage (intake: `title`, `value`, `status`; triaged: adds
      `workstream`, `change-type`, `risk`, `verify`, `value-verdict`,
      `disposition`).
-  2. Every enum field holds a legal value.
+  2. Every enum field holds a legal value. `change-type` is not enum-checked
+     here: if `workstreams.md` declares a `change-types` vocabulary, an item
+     using a value outside it produces a **warning** (never a violation); with
+     no declared vocabulary, any change-type is accepted.
   3. `id` == filename (minus `.md`); ids unique across `intake/` + all
      workstream dirs.
   4. An item's directory matches its `workstream` field (or it is in `intake/`
@@ -343,14 +346,17 @@ Human output · `--json` output · Exit codes.**
 - **Checks (added by `--strict`).**
   5. Ready-consistency: `status: approved` ⇒ non-empty `verify`.
   6. Disposition coherence: `disposition: AUTO` ⇒ `verify` != `none` AND
-     `change-type` is not a never-auto type for that workstream.
+     `change-type` is not listed in `workstreams.md` `never-auto-change-types`
+     (the project-declared AUTO-forbidden set).
   7. No `hint` key survives on a triaged item.
   8. Any `escalated: <file>` note points at an existing escalation record.
   9. No stray files in workstream dirs that are not valid items.
-- **Human output.** `ok: N items` or a per-item list of violations on stderr.
+- **Human output.** `ok: N items` or a per-item list of violations on stderr,
+  followed by any advisory `warn:` lines (e.g. out-of-vocabulary change-types).
 - **`--json`.** `{ "ok": bool, "checked": N, "violations": [ { "id", "check",
-  "message" } ] }`.
-- **Exit codes.** 0 (clean); 3 (one or more violations).
+  "message" } ], "warnings": [ { "id", "check", "message" } ] }`. Warnings never
+  set `ok: false`.
+- **Exit codes.** 0 (clean, warnings allowed); 3 (one or more violations).
 
 ---
 
@@ -479,7 +485,7 @@ Canonical frontmatter (from `bindings.md`, kept verbatim as the schema):
 | `value` | string | the pain removed / potential unlocked |
 | `source` | string | optional |
 | `hint` | ws name | optional; submit-time only, removed on triage |
-| `change-type` | `doc\|tooling\|bugfix\|audit\|verify\|new-command\|new-flag\|rename\|removal\|design\|subjective` | |
+| `change-type` | project vocabulary declared in `workstreams.md` `change-types` | not hardcoded; an out-of-vocabulary value warns, never fails |
 | `risk` | `additive\|reversible\|behavior-change\|subjective` | |
 | `verify` | string | headless acceptance test, or `none` |
 | `value-verdict` | `ADVANCE\|HOLD\|DISCARD — <why>` | |
@@ -499,6 +505,9 @@ the CLI:
 1. Parses the resulting frontmatter and rejects unknown keys (typo guard) and
    illegal enum values → exit 3, original file untouched (write to a temp file
    + atomic rename, so a rejected or crashed write never leaves a half-file).
+   `change-type` is exempt from this reject: its vocabulary is the project's
+   (declared in `workstreams.md`), so a write never fails on it — divergence is
+   surfaced as a non-failing warning by `validate`/`doctor` instead.
 2. Enforces stage-required keys (intake vs triaged, per
    [§3.8](#38-anthill-backlog-validate)).
 3. Enforces id immutability and uniqueness.

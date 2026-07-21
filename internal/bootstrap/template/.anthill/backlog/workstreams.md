@@ -1,6 +1,8 @@
 ---
 sweep-order: bugs, product, dev, process
 never-implicit:
+change-types: doc, tooling, bugfix, audit, verify, rename, removal, design, subjective
+never-auto-change-types: rename, removal, design, subjective
 ---
 
 # Backlog workstreams — <YOUR PROJECT>
@@ -20,6 +22,16 @@ The frontmatter above is the machine-readable contract:
 - **never-implicit** — workstreams only ever dispatched deliberately (never
   swept by bare `dispatch`). Leave empty unless you have a stream that must
   never auto-run (e.g. a content/authoring stream); then list it here.
+- **change-types** — your domain's change-type vocabulary: the menu triage
+  picks from. The seeded list is a domain-neutral starter; add the change
+  types your project actually uses (e.g. a `new-<primitive>` family for the
+  surfaces you add). An item whose change-type is outside this set is a
+  `validate`/`doctor` **warning**, never a hard failure — so the set guides
+  without blocking.
+- **never-auto-change-types** — the subset of change-types that can never carry
+  `disposition: AUTO` (permanent, cross-cutting, or taste-laden in your domain).
+  Enforced as a hard `disposition-coherence` violation under `validate --strict`
+  / `doctor`. Keep it aligned with the per-workstream **Never-auto** prose below.
 
 A workstream's identity is its **directory name** under
 `.anthill/backlog/`. Every stream below must have a matching directory.

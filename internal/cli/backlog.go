@@ -520,11 +520,18 @@ func (a *App) runBacklogValidate(strict bool) error {
 		if jerr := a.emitJSON(res); jerr != nil {
 			return jerr
 		}
-	} else if res.OK {
-		a.note("ok: %d items", res.Checked)
 	} else {
-		for _, v := range res.Violations {
-			a.note("%s [%s]: %s", v.ID, v.Check, v.Message)
+		if res.OK {
+			a.note("ok: %d items", res.Checked)
+		} else {
+			for _, v := range res.Violations {
+				a.note("%s [%s]: %s", v.ID, v.Check, v.Message)
+			}
+		}
+		// Warnings are advisory (e.g. an out-of-vocabulary change-type): printed
+		// regardless of OK, never affecting the exit code.
+		for _, w := range res.Warnings {
+			a.note("warn: %s [%s]: %s", w.ID, w.Check, w.Message)
 		}
 	}
 	if !res.OK {

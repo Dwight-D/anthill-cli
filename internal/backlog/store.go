@@ -148,6 +148,39 @@ func (s *Store) ListedSweepOrder() ([]string, error) {
 	return splitList(meta.SweepOrder), nil
 }
 
+// changeTypeConfig reads the project's change-type vocabulary from
+// workstreams.md frontmatter. `declared` is the accepted menu (`change-types`);
+// an empty map means the project has declared none, so any change-type is
+// accepted free-form (no vocabulary warning). `neverAuto` is the subset
+// (`never-auto-change-types`) that can never carry an AUTO disposition. The read
+// is tolerant: a missing/unparseable file yields empty maps, never an error, so
+// validation degrades to free-form rather than failing.
+func (s *Store) changeTypeConfig() (declared, neverAuto map[string]bool) {
+	declared, neverAuto = map[string]bool{}, map[string]bool{}
+	data, err := os.ReadFile(filepath.Join(s.dir(), "workstreams.md"))
+	if err != nil {
+		return declared, neverAuto
+	}
+	fm, _, ferr := mdfile.Split(data)
+	if ferr != nil {
+		return declared, neverAuto
+	}
+	var meta struct {
+		ChangeTypes string `yaml:"change-types"`
+		NeverAuto   string `yaml:"never-auto-change-types"`
+	}
+	if yaml.Unmarshal(fm, &meta) != nil {
+		return declared, neverAuto
+	}
+	for _, c := range splitList(meta.ChangeTypes) {
+		declared[c] = true
+	}
+	for _, c := range splitList(meta.NeverAuto) {
+		neverAuto[c] = true
+	}
+	return declared, neverAuto
+}
+
 func splitList(s string) []string {
 	var out []string
 	for _, p := range strings.Split(s, ",") {

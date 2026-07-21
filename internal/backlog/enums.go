@@ -4,12 +4,12 @@ import "strings"
 
 // Enum value sets for the item frontmatter schema (from bindings.md, owned by
 // this CLI as the schema owner).
-
-var changeTypes = map[string]bool{
-	"doc": true, "tooling": true, "bugfix": true, "audit": true,
-	"verify": true, "new-command": true, "new-flag": true, "rename": true,
-	"removal": true, "design": true, "subjective": true,
-}
+//
+// change-type is deliberately absent here: its vocabulary is the project's
+// domain, declared in workstreams.md frontmatter (`change-types`) and read via
+// Store.changeTypeConfig. An undeclared change-type is a soft warning, never a
+// hard rejection. The never-auto subset lives in the same config
+// (`never-auto-change-types`).
 
 var risks = map[string]bool{
 	"additive": true, "reversible": true, "behavior-change": true, "subjective": true,
@@ -29,13 +29,6 @@ var priorities = map[string]bool{
 }
 
 var valueVerdictPrefixes = []string{"ADVANCE", "HOLD", "DISCARD"}
-
-// neverAutoChangeTypes are change types that can never carry an AUTO disposition
-// (they are always human-review, per the cli workstream profile).
-var neverAutoChangeTypes = map[string]bool{
-	"new-command": true, "new-flag": true, "rename": true,
-	"removal": true, "design": true, "subjective": true,
-}
 
 // validValueVerdict reports whether v is a legal value-verdict: one of the
 // prefixes optionally followed by " — <why>".

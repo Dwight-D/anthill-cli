@@ -63,6 +63,34 @@ func TestDoctorSweepOrderNames(t *testing.T) {
 	wantExit(t, r, 3)
 }
 
+// TestDoctorChangeTypeVocabWarnsNotFails covers the soft change-type check: an
+// item whose change-type is outside the project's declared `change-types`
+// vocabulary makes doctor emit a warn line but exit 0. The vocabulary is the
+// project's domain (declared in workstreams.md), not a hard schema rule.
+func TestDoctorChangeTypeVocabWarnsNotFails(t *testing.T) {
+	dir := scaffoldFresh(t)
+	// Declare a narrow vocabulary (streams match the scaffolded dirs so Section B
+	// sweep-order stays healthy); the item below uses a change-type outside it.
+	writeRaw(t, filepath.Join(backlogDir(dir), "workstreams.md"),
+		"---\nsweep-order: bugs, product, dev, process\nnever-implicit:\nchange-types: doc, tooling\n---\n\n# Workstreams\n")
+	writeItem(t, dir, "dev", "novel-item", map[string]string{
+		"workstream":    "dev",
+		"title":         "t",
+		"value":         "v",
+		"change-type":   "new-assembly",
+		"risk":          "additive",
+		"verify":        "go test ./...",
+		"value-verdict": "ADVANCE — x",
+		"disposition":   "REVIEW",
+		"status":        "approved",
+		"priority":      "normal",
+	}, "")
+
+	r := runIn(t, dir, "doctor")
+	wantExit(t, r, 0)
+	wantContains(t, r.stdout, "change-type-vocab", "doctor output")
+}
+
 // TestDoctorAnsweredUnapplied covers the failure mode the escalate skill calls
 // out: an answered-but-unapplied escalation record (spec §4.4 Section B). The
 // escalations-applied check is always-on (not strict-gated); built on a real

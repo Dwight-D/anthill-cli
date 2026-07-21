@@ -45,8 +45,10 @@ title:        <one line>
 value:        <the pain it removes or the potential it unlocks>
 source:       <where it came up>                                  # optional
 hint:         <non-binding submitter hint at submit time; removed on triage> # optional
-change-type:  doc | tooling | bugfix | audit | verify | new-command |
+change-type:  project vocabulary declared in workstreams.md `change-types`;
+              here: doc | tooling | bugfix | audit | verify | new-command |
               new-flag | rename | removal | design | subjective
+              (out-of-vocabulary values warn, never fail)
 risk:         additive | reversible | behavior-change | subjective
 verify:       <headless acceptance test, or "none">
 value-verdict: ADVANCE | HOLD | DISCARD — <one-line why>

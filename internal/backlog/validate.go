@@ -31,9 +31,9 @@ func (s *Store) validateForPersist(it *Item, isNew bool) error {
 	if !statuses[it.Status] {
 		return invalid("illegal status %q", it.Status)
 	}
-	if it.ChangeType != "" && !changeTypes[it.ChangeType] {
-		return invalid("illegal change-type %q", it.ChangeType)
-	}
+	// change-type is intentionally not enum-checked on write: its vocabulary is
+	// the project's domain (declared in workstreams.md). Divergence surfaces as a
+	// soft warning at validate/doctor time, not a write rejection.
 	if it.Risk != "" && !risks[it.Risk] {
 		return invalid("illegal risk %q", it.Risk)
 	}
@@ -56,17 +56,21 @@ type Violation struct {
 	Message string `json:"message"`
 }
 
-// ValidateResult is the outcome of a full-tree validation.
+// ValidateResult is the outcome of a full-tree validation. Warnings are
+// advisory (e.g. a change-type outside the project's declared vocabulary): they
+// are reported but never flip OK or affect exit codes.
 type ValidateResult struct {
 	OK         bool        `json:"ok"`
 	Checked    int         `json:"checked"`
 	Violations []Violation `json:"violations"`
+	Warnings   []Violation `json:"warnings"`
 }
 
 // Validate certifies the backlog tree as schema-well-formed. strict adds the
 // cross-field consistency checks.
 func (s *Store) Validate(strict bool) (*ValidateResult, error) {
-	res := &ValidateResult{OK: true, Violations: []Violation{}}
+	res := &ValidateResult{OK: true, Violations: []Violation{}, Warnings: []Violation{}}
+	declared, neverAuto := s.changeTypeConfig()
 	idDirs := map[string][]string{} // id -> dirs it appears in
 
 	check := func(dir, ws string) error {
@@ -101,7 +105,7 @@ func (s *Store) Validate(strict bool) (*ValidateResult, error) {
 			if rerr != nil {
 				return rerr
 			}
-			s.validateFile(res, data, id, ws, strict)
+			s.validateFile(res, data, id, ws, strict, declared, neverAuto)
 		}
 		return nil
 	}
@@ -149,10 +153,13 @@ func dirLabel(ws string) string {
 	return ws
 }
 
-func (r *ValidateResult) add(v *Violation) { r.Violations = append(r.Violations, *v) }
+func (r *ValidateResult) add(v *Violation)        { r.Violations = append(r.Violations, *v) }
+func (r *ValidateResult) addWarning(v *Violation) { r.Warnings = append(r.Warnings, *v) }
 
-// validateFile checks one item file's bytes against the schema.
-func (s *Store) validateFile(res *ValidateResult, data []byte, id, ws string, strict bool) {
+// validateFile checks one item file's bytes against the schema. declared is the
+// project's change-type vocabulary and neverAuto the AUTO-forbidden subset, both
+// from workstreams.md; an empty declared set disables the vocabulary warning.
+func (s *Store) validateFile(res *ValidateResult, data []byte, id, ws string, strict bool, declared, neverAuto map[string]bool) {
 	fm, body, err := mdfile.Split(data)
 	if err != nil {
 		res.add(&Violation{ID: id, Check: "frontmatter", Message: err.Error()})
@@ -189,8 +196,12 @@ func (s *Store) validateFile(res *ValidateResult, data []byte, id, ws string, st
 	if it.Status == "" || !statuses[it.Status] {
 		res.add(&Violation{ID: id, Check: "enum", Message: fmt.Sprintf("illegal or missing status %q", it.Status)})
 	}
-	if it.ChangeType != "" && !changeTypes[it.ChangeType] {
-		res.add(&Violation{ID: id, Check: "enum", Message: fmt.Sprintf("illegal change-type %q", it.ChangeType)})
+	// change-type: soft-checked against the project's declared vocabulary. An
+	// out-of-vocabulary value is advisory (helps agents converge on one menu),
+	// never a hard violation. No declared set → free-form, no warning.
+	if len(declared) > 0 && it.ChangeType != "" && !declared[it.ChangeType] {
+		res.addWarning(&Violation{ID: id, Check: "change-type-vocab",
+			Message: fmt.Sprintf("change-type %q is outside the declared vocabulary", it.ChangeType)})
 	}
 	if it.Risk != "" && !risks[it.Risk] {
 		res.add(&Violation{ID: id, Check: "enum", Message: fmt.Sprintf("illegal risk %q", it.Risk)})
@@ -212,7 +223,7 @@ func (s *Store) validateFile(res *ValidateResult, data []byte, id, ws string, st
 	}
 
 	if strict {
-		s.strictChecks(res, &it, id)
+		s.strictChecks(res, &it, id, neverAuto)
 	}
 }
 
@@ -251,7 +262,8 @@ func requiredMissing(it *Item, triaged bool) []string {
 }
 
 // strictChecks are the added cross-field consistency checks under --strict.
-func (s *Store) strictChecks(res *ValidateResult, it *Item, id string) {
+// neverAuto is the project's AUTO-forbidden change-type set (from workstreams.md).
+func (s *Store) strictChecks(res *ValidateResult, it *Item, id string, neverAuto map[string]bool) {
 	// 5. Ready-consistency.
 	if it.Status == "approved" && (it.Verify == "" || it.Verify == "none") {
 		res.add(&Violation{ID: id, Check: "ready-consistency",
@@ -263,7 +275,7 @@ func (s *Store) strictChecks(res *ValidateResult, it *Item, id string) {
 			res.add(&Violation{ID: id, Check: "disposition-coherence",
 				Message: "disposition AUTO requires a non-none verify"})
 		}
-		if neverAutoChangeTypes[it.ChangeType] {
+		if neverAuto[it.ChangeType] {
 			res.add(&Violation{ID: id, Check: "disposition-coherence",
 				Message: fmt.Sprintf("disposition AUTO illegal for never-auto change-type %q", it.ChangeType)})
 		}
