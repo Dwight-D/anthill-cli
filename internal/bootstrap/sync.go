@@ -6,31 +6,30 @@ import (
 	"sort"
 )
 
-// SyncResult is the outcome of a sync (or dry-run plan): which general-tier
-// skills were brought to the embedded ref, which were already current, and
-// which could not be reconciled automatically.
+// SyncResult is the outcome of a sync (or dry-run plan): which reconciled units
+// were brought to the embedded ref, which were already current, and which could
+// not be reconciled automatically. A unit is a general-tier skill (labeled by
+// name) or a framework-invariant non-skill file (labeled by its payload path).
 type SyncResult struct {
-	Updated   []string // skills re-copied verbatim to the embedded version
-	Unchanged []string // skills already byte-identical to the embedded version
-	Conflicts []string // skills with an unexpected local edit (need --force to overwrite)
+	Updated   []string // units re-copied verbatim to the embedded version
+	Unchanged []string // units already byte-identical to the embedded version
+	Conflicts []string // units with an unexpected local edit (need --force to overwrite)
 	FromRef   string   // the install's synced-through ref before sync ("" if unstamped)
 	ToRef     string   // the embedded template ref
 }
 
-// Sync brings installDir's general-tier skills to the embedded pinned template.
-//
-// Per-skill reconciliation is byte-exact and uniform across every skill — there
-// are no adaptation regions or per-skill merges:
-//   - A skill whose files all match the embedded version is Unchanged.
-//   - A skill that differs while the install's synced-through already equals the
-//     embedded ref is treated as an unexpected local edit → Conflict (needs
-//     --force to overwrite); otherwise (the install is behind) a difference is an
-//     upstream update and the skill is re-copied verbatim → Updated.
-//
-// On a clean apply the synced-through baseline is bumped to the embedded ref.
-// With unresolved conflicts and no force, nothing is bumped and the caller maps
-// this to exit 3. dryRun computes the plan and writes nothing.
-func Sync(installDir string, dryRun, force bool) (*SyncResult, error) {
+// syncUnit is one reconcilable payload unit: a display label (a skill name or a
+// file path) and the payload file paths it covers.
+type syncUnit struct {
+	label string
+	paths []string
+}
+
+// syncedUnits returns everything sync reconciles against the embedded template,
+// in report order: the general-tier skills (one unit per skill, labeled by
+// name), then the framework-invariant non-skill files (one unit per file,
+// labeled by its path).
+func syncedUnits() ([]syncUnit, error) {
 	names, err := SkillNames()
 	if err != nil {
 		return nil, err
@@ -43,6 +42,35 @@ func Sync(installDir string, dryRun, force bool) (*SyncResult, error) {
 	for _, p := range files {
 		bySkill[SkillNameOf(p)] = append(bySkill[SkillNameOf(p)], p)
 	}
+	var units []syncUnit
+	for _, name := range names {
+		units = append(units, syncUnit{label: name, paths: bySkill[name]})
+	}
+	for _, p := range FrameworkInvariantFiles() {
+		units = append(units, syncUnit{label: p, paths: []string{p}})
+	}
+	return units, nil
+}
+
+// Sync brings installDir's synced units (general-tier skills plus the
+// framework-invariant non-skill files) to the embedded pinned template.
+//
+// Per-unit reconciliation is byte-exact and uniform — there are no adaptation
+// regions or merges:
+//   - A unit whose files all match the embedded version is Unchanged.
+//   - A unit that differs while the install's synced-through already equals the
+//     embedded ref is treated as an unexpected local edit → Conflict (needs
+//     --force to overwrite); otherwise (the install is behind) a difference is an
+//     upstream update and the unit is re-copied verbatim → Updated.
+//
+// On a clean apply the synced-through baseline is bumped to the embedded ref.
+// With unresolved conflicts and no force, nothing is bumped and the caller maps
+// this to exit 3. dryRun computes the plan and writes nothing.
+func Sync(installDir string, dryRun, force bool) (*SyncResult, error) {
+	units, err := syncedUnits()
+	if err != nil {
+		return nil, err
+	}
 
 	fromRef := ""
 	if content, rerr := os.ReadFile(filepath.Join(installDir, filepath.FromSlash(frameworkRelPath))); rerr == nil {
@@ -53,12 +81,12 @@ func Sync(installDir string, dryRun, force bool) (*SyncResult, error) {
 	installClaimsCurrent := fromRef == TemplateRef
 
 	res := &SyncResult{FromRef: fromRef, ToRef: TemplateRef}
-	var toWrite []string // payload paths to copy verbatim (for Updated skills)
+	var toWrite []string // payload paths to copy verbatim (for Updated units)
 
-	for _, name := range names {
+	for _, u := range units {
 		var writes []string
 		conflict := false
-		for _, p := range bySkill[name] {
+		for _, p := range u.paths {
 			tmpl, terr := ReadTemplateFile(p)
 			if terr != nil {
 				return nil, terr
@@ -86,12 +114,12 @@ func Sync(installDir string, dryRun, force bool) (*SyncResult, error) {
 		}
 		switch {
 		case conflict:
-			res.Conflicts = append(res.Conflicts, name)
+			res.Conflicts = append(res.Conflicts, u.label)
 		case len(writes) > 0:
-			res.Updated = append(res.Updated, name)
+			res.Updated = append(res.Updated, u.label)
 			toWrite = append(toWrite, writes...)
 		default:
-			res.Unchanged = append(res.Unchanged, name)
+			res.Unchanged = append(res.Unchanged, u.label)
 		}
 	}
 	sort.Strings(res.Updated)

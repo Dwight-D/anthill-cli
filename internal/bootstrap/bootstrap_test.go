@@ -304,3 +304,94 @@ func TestSyncUpdatesBehindInstall(t *testing.T) {
 		t.Fatalf("synced-through not bumped: %q", ref)
 	}
 }
+
+// TestFrameworkInvariantFilesAreValid guards the curated sync allowlist: every
+// path must be a payload member and free of derivation markers. A future
+// template edit that turns one of these into a project-derived file (adds a
+// marker) or renames it must fail here rather than silently syncing over a
+// per-install fill-in.
+func TestFrameworkInvariantFilesAreValid(t *testing.T) {
+	payload, err := PayloadFiles()
+	if err != nil {
+		t.Fatal(err)
+	}
+	inPayload := map[string]bool{}
+	for _, p := range payload {
+		inPayload[p] = true
+	}
+	for _, p := range FrameworkInvariantFiles() {
+		if !inPayload[p] {
+			t.Errorf("framework-invariant file %q is not a payload member", p)
+			continue
+		}
+		if strings.HasPrefix(p, ".claude/skills/") {
+			t.Errorf("%q is a skill file; skills are reconciled separately, not via the invariant list", p)
+		}
+		data := mustReadTemplate(t, p)
+		for _, m := range templateMarkers {
+			if strings.Contains(string(data), m) {
+				t.Errorf("framework-invariant file %q carries derivation marker %q — it is project-derived, not invariant", p, m)
+			}
+		}
+	}
+}
+
+// TestSyncReconcilesFrameworkInvariantFile covers the widened sync scope: a
+// non-skill framework-invariant file follows upstream exactly like a skill —
+// re-copied verbatim when the install is behind, and a conflict when locally
+// edited on a current install.
+func TestSyncReconcilesFrameworkInvariantFile(t *testing.T) {
+	const target = ".anthill/backlog/README.md"
+	pristine := mustReadTemplate(t, target)
+
+	// (a) Behind install with a diverged copy → Updated (restored verbatim).
+	dir := t.TempDir()
+	if _, err := Scaffold(dir, false, false); err != nil {
+		t.Fatalf("Scaffold: %v", err)
+	}
+	fwPath := filepath.Join(dir, filepath.FromSlash(frameworkRelPath))
+	fw, _ := os.ReadFile(fwPath)
+	behind, err := StampFramework(fw, "0000000000000000000000000000000000000000", "2026-01-01")
+	if err != nil {
+		t.Fatalf("stamp behind: %v", err)
+	}
+	if err := os.WriteFile(fwPath, behind, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(dir, filepath.FromSlash(target))
+	if err := os.WriteFile(path, []byte("stale local copy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Sync(dir, false, false)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if !contains(res.Updated, target) {
+		t.Fatalf("behind install should update %q; updated=%v conflicts=%v", target, res.Updated, res.Conflicts)
+	}
+	if got, _ := os.ReadFile(path); string(got) != string(pristine) {
+		t.Fatal("sync did not restore the framework-invariant file verbatim")
+	}
+
+	// (b) Current install with a local edit → Conflict, file left untouched.
+	dir2 := t.TempDir()
+	if _, err := Scaffold(dir2, false, false); err != nil {
+		t.Fatalf("Scaffold: %v", err)
+	}
+	path2 := filepath.Join(dir2, filepath.FromSlash(target))
+	const edit = "local edit that should not be clobbered without --force\n"
+	if err := os.WriteFile(path2, []byte(edit), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	res2, err := Sync(dir2, false, false)
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if !contains(res2.Conflicts, target) {
+		t.Fatalf("local edit on a current install should conflict; conflicts=%v updated=%v", res2.Conflicts, res2.Updated)
+	}
+	if got, _ := os.ReadFile(path2); string(got) != edit {
+		t.Fatal("conflicting sync (no --force) must leave the local edit untouched")
+	}
+}

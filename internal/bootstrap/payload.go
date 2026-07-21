@@ -61,6 +61,37 @@ func ReadTemplateFile(p string) ([]byte, error) {
 	return fs.ReadFile(TemplateFS(), p)
 }
 
+// frameworkInvariantFiles are the non-skill payload paths that `sync`
+// reconciles alongside the general-tier skills. Inclusion criteria — a file
+// qualifies only if it is ALL of:
+//   - framework-owned (authored upstream, not derived per install: carries none
+//     of the derivation markers),
+//   - byte-identical across every install (no `<YOUR PROJECT>` fill-ins), and
+//   - stateless (not a runtime log/changelog/agenda that accrues content).
+//
+// This is a curated allowlist rather than "every marker-free file" on purpose:
+// runtime-state files (CHANGELOG.md, LOG.md, decisions.md, agenda.md) and inert
+// .gitkeep/.gitignore markers are also marker-free but must never be
+// overwritten by sync. Adding a file here makes it follow upstream on `sync`
+// exactly like a skill (re-copied verbatim when behind, conflict on local edit).
+var frameworkInvariantFiles = []string{
+	".anthill/README.md",
+	".anthill/backlog/README.md",
+	".anthill/escalations/README.md",
+	".anthill/supervisor/brief-template.md",
+	".anthill/supervisor/scratchpad/README.md",
+	"tools/supervise.ps1",
+	"tools/supervise.sh",
+}
+
+// FrameworkInvariantFiles returns the curated non-skill payload paths that sync
+// reconciles verbatim (see frameworkInvariantFiles), sorted.
+func FrameworkInvariantFiles() []string {
+	out := append([]string(nil), frameworkInvariantFiles...)
+	sort.Strings(out)
+	return out
+}
+
 // SkillFiles returns the payload files that belong to the general-tier skills
 // (anything under ".claude/skills/"), sorted.
 func SkillFiles() ([]string, error) {

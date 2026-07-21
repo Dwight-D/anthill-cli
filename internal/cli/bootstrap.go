@@ -167,12 +167,15 @@ func (a *App) newSyncCommand() *cobra.Command {
 	var force, dryRun bool
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Bring installed general-tier skills up to the embedded template ref",
-		Long: "sync diffs the installed general-tier skills against the embedded pinned " +
-			"template, re-copies changed skills verbatim, and bumps .anthill/framework.md " +
-			"synced-through. Every skill is compared byte-for-byte with no exceptions; a skill " +
-			"carrying an unexpected local edit is reported as a conflict and left unchanged " +
-			"unless --force.",
+		Short: "Bring installed general-tier skills + framework-invariant files up to the embedded template ref",
+		Long: "sync diffs the installed upstream-owned files against the embedded pinned " +
+			"template, re-copies changed ones verbatim, and bumps .anthill/framework.md " +
+			"synced-through. It reconciles the general-tier skills plus the framework-invariant " +
+			"non-skill files (the .anthill/ reference READMEs, the supervisor brief template, and " +
+			"the tools/ launchers). Project-derived files (workstreams, bindings, autonomy, " +
+			"resources) and runtime state (changelogs, logs, agenda) are never touched. Every " +
+			"unit is compared byte-for-byte with no exceptions; one carrying an unexpected local " +
+			"edit is reported as a conflict and left unchanged unless --force.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			root, err := a.resolveRoot()

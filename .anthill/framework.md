@@ -16,17 +16,28 @@ upgrade procedure re-copies changed general-tier skills and bumps the
 
 ## Two-tier discipline (how this installation stays upgradeable)
 
-- **General tier** = the `.claude/skills/` orchestration skills (`supervisor`,
-  `autonomous`, `triage`, `submit`, `dispatch`, `dispatch-loop`,
-  `dispatch-receive`, `expedite`, `escalate`, `wake-up`). These are
-  byte-identical to upstream, with no exceptions. **Never locally edit a
-  general-tier skill** — divergence across installations is the failure mode
-  the two-tier split exists to prevent. Upgrading = replacing skill files. The
-  `autonomous` skill's project-specific inputs — its proceed-list and
-  decisions-log path — live in `.anthill/autonomy.md`, specific-tier config the
-  skill loads at invocation, so filling them in is not a skill edit.
-- **Specific tier** = everything under `.anthill/` — bindings, workstreams,
-  resources, autonomy config, the launcher. All adaptation lives here.
+The split is by **ownership**, not by directory. `anthill sync` reconciles every
+upstream-owned file byte-identical to the embedded template; project-owned files
+it never touches.
+
+- **Upstream-owned (follows `sync`)** — never locally edit these; divergence
+  across installations is the failure mode the split exists to prevent:
+  - the `.claude/skills/` orchestration skills (`supervisor`, `autonomous`,
+    `triage`, `submit`, `dispatch`, `dispatch-loop`, `dispatch-receive`,
+    `expedite`, `escalate`, `wake-up`), byte-identical to upstream with no
+    exceptions, and
+  - the **framework-invariant** files: the `.anthill/` reference READMEs, the
+    supervisor brief template, and the `tools/` launchers.
+
+  The `autonomous` skill's project-specific inputs — its proceed-list and
+  decisions-log path — live in `.anthill/autonomy.md` (project-owned config the
+  skill loads at invocation), so filling them in is not a skill edit.
+- **Project-owned (`sync` never touches)** — the adaptation config
+  (`backlog/bindings.md`, `workstreams.md`, `autonomy.md`, `resources.md`,
+  `supervisor/bindings.md`, this `framework.md`) and runtime state
+  (`backlog/CHANGELOG.md`, `escalations/LOG.md`, `decisions.md`,
+  `supervisor/agenda.md`). These arrive once at scaffold and are refused (left
+  as-is) on any re-scaffold. All adaptation lives here.
 
 ## Flag upstream, don't fork
 
@@ -39,8 +50,9 @@ report so the maintainer can supersede it.
 
 Compare `synced-through` above against the upstream Anthill repository's latest
 release. For each newer release, apply its consumer action (usually: re-copy
-the named general-tier skills verbatim, or re-derive a named binding), then bump
-`synced-through`. `anthill sync` automates the skill re-copy and the bump.
+the named upstream-owned files verbatim, or re-derive a named binding), then bump
+`synced-through`. `anthill sync` automates the upstream-owned re-copy (skills +
+framework-invariant files) and the bump.
 
 ## Sync log (framework changes applied here)
 

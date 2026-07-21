@@ -177,21 +177,37 @@ records well-formed, no answered-but-unapplied escalations.
 
 ### 4.5 `anthill sync [--dry-run] [--force]`
 
-Realizes `INSTALLATION.md`'s "Sync downstream". Diffs the installed general-tier
-skills against the (newer) embedded version, re-copies changed skills verbatim,
-and bumps `.anthill/framework.md` `synced-through` to the embedded ref. Touches
-no other `.anthill/` config.
+Realizes `INSTALLATION.md`'s "Sync downstream". Diffs the installed
+**upstream-owned files** against the (newer) embedded version, re-copies changed
+ones verbatim, and bumps `.anthill/framework.md` `synced-through` to the embedded
+ref.
 
-- **Preserves the sanctioned `autonomous` adaptations** — the derived
-  proceed-list and decisions-log path are never clobbered; only the surrounding
-  skill text is updated. If an upstream change conflicts with those adaptation
-  regions, `sync` reports the conflict and leaves the file unchanged (exit 3)
-  rather than guessing — resolve manually or re-derive.
-- **Flags.** `--dry-run` show the skill-level diff without applying; `--force`
-  apply even when a skill has an unexpected local edit (overwrites the local
-  edit — the diff is shown first).
+- **Scope — the reconciled units.** Two kinds, both compared byte-for-byte with
+  no exceptions:
+  1. the general-tier skills under `.claude/skills/**` (labeled by skill name), and
+  2. the **framework-invariant** non-skill files (labeled by payload path): the
+     `.anthill/` reference READMEs (`.anthill/README.md`,
+     `.anthill/backlog/README.md`, `.anthill/escalations/README.md`), the
+     supervisor brief template and scratchpad README, and the `tools/`
+     launchers (`supervise.ps1`, `supervise.sh`). These are authored upstream,
+     identical across every install, and hold no per-project fill-in, so they
+     ride upstream exactly like a skill.
+- **What sync never touches.** Project-derived config (`workstreams.md`,
+  `backlog/bindings.md`, `autonomy.md`, `resources.md`, `supervisor/bindings.md`,
+  `framework.md`, `CLAUDE.template.md`) and runtime state (`backlog/CHANGELOG.md`,
+  `escalations/LOG.md`, `decisions.md`, `supervisor/agenda.md`). Overwriting
+  either would clobber per-install content, so they are excluded by design and
+  only ever arrive/change via `scaffold` (a one-time, refuse-if-derived install).
+- **Conflict rule (uniform per unit).** A unit that differs while the install
+  already claims the embedded ref is an unexpected local edit → reported as a
+  conflict and left unchanged (exit 3) unless `--force`. A unit that differs on a
+  behind install is an upstream update → re-copied verbatim.
+- **Flags.** `--dry-run` show the diff without applying; `--force` apply even
+  when a unit has an unexpected local edit (overwrites it — the diff is shown
+  first).
 - **`--json`.** `{ "updated": [...], "unchanged": [...], "conflicts": [...],
-  "from_ref": "<old>", "to_ref": "<new>" }`.
+  "from_ref": "<old>", "to_ref": "<new>" }`. List entries are skill names or
+  framework-invariant file paths.
 - **Exit codes.** 0 applied (or clean `--dry-run`); 3 on an unresolved
   conflict without `--force`.
 
