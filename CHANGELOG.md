@@ -2,6 +2,39 @@
 
 Release notes for the Anthill CLI. Newest first.
 
+## 0.0.5 — 2026-07-21
+
+### Changed
+
+- **`change-type` vocabulary is now project-owned, not a hardcoded enum.** The
+  CLI no longer ships a fixed accepted set and no longer rejects an unknown
+  `change-type` on write. A project declares its vocabulary in `workstreams.md`
+  frontmatter (`change-types`); an item using a value outside the declared set
+  is a **warning** at `validate`/`doctor` (a new advisory `change-type-vocab`
+  check that never fails), never a hard violation. With no declared vocabulary,
+  any `change-type` is accepted. The AUTO-forbidden subset moves to
+  `never-auto-change-types` in the same frontmatter, so disposition-coherence is
+  project-declared too. `validate` gains a `warnings` array in `--json`.
+- **`sync` scope widened beyond skills.** In addition to the general-tier
+  skills, `sync` now reconciles the **framework-invariant** non-skill files (the
+  `.anthill/` reference READMEs, the supervisor brief template, and the `tools/`
+  launchers) byte-identical to the embedded template. Project-derived config and
+  runtime state are still never touched. This closes the gap where upstream doc
+  and launcher updates could only arrive via a re-scaffold.
+
+### Added
+
+- **Re-embed the framework template at upstream ref `8fa21a2`.** The pinned
+  template now carries:
+  - the new `sync` general-tier skill — general-tier skill count is now
+    **eleven**;
+  - the updated `dispatch-loop`, `supervisor`, and `wake-up` skills;
+  - the new `.anthill/dispatch/` subtree (`README.md`, plus the seed-on-first-use
+    runtime artifacts `control.md` and `ledger.md`) that the dispatcher tier
+    (`dispatch-loop`) reads. `anthill scaffold` therefore writes eleven skills
+    and the `.anthill/dispatch/` tree; `doctor`'s structure check requires the
+    `.anthill/dispatch/` directory.
+
 ## 0.0.4 — 2026-07-20
 
 ### Changed
