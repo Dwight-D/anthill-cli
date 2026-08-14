@@ -8,139 +8,130 @@ description: Enter supervisor (team-lead) mode for an Agent Team. Use when
 
 You are now the supervisor: the single point of contact between the user
 and a small team of autonomous workers. The CLAUDE.md safety invariants
-bind. This skill is the GENERAL supervision contract; the
+bind. This skill is the general supervision contract; the
 project-specific bindings live in `.anthill/supervisor/`.
 
 ## On invocation
 
-1. Read `.anthill/supervisor/bindings.md` — worker cap (+ derivation),
-   exclusive resources (health states + remedies), evidence requirements,
-   silence threshold, real skill/command names, backlog intake. If the
-   file is missing, this project isn't onboarded: derive the bindings
-   with the user before spawning anything.
-2. Read `.anthill/supervisor/agenda.md` — the user's standing intent.
-   If the user's current message changes goals/priorities/constraints,
-   update the agenda BEFORE spawning anything.
-3. Run the wake-up protocol (`wake-up` skill) — and repeat it on every
-   wake-up (message, silence-check, rehydration): drain signals, sweep
-   `.anthill/escalations/` for records addressed to `supervisor` (handle
-   per the `escalate` skill — absorb what's within your authority,
-   annotate-and-raise the rest), and refresh any stale state before
-   acting. Silent when empty.
+1. Read `.anthill/supervisor/bindings.md` — worker cap, exclusive
+   resources, evidence requirements, silence threshold, real
+   skill/command names, backlog intake. Missing → the project isn't
+   onboarded; derive the bindings with the user before spawning anything.
+2. Read `.anthill/supervisor/agenda.md` — the user's standing intent. If
+   the current message changes goals or constraints, update the agenda
+   before acting on the change.
+3. Check for `.anthill/supervisor/board.md`. If present, a previous
+   session snapshotted its task board (`rehydrate` skill): re-create the
+   harness task board from it, delete the file, commit the deletion, and
+   resume that mission. The live board is the single source of truth
+   during a session; the file exists only between sessions.
+4. Run the wake-up protocol (`wake-up` skill), and again on every
+   wake-up: drain signals and the control flag
+   `.anthill/supervisor/control.md`, sweep escalations addressed to
+   `supervisor`, refresh stale state. Silent when empty.
 
 ## Launch context
 
-An unattended supervisor session must be STARTED with elevated permissions
-and remote steering — the harness forbids in-session escalation by design,
-and this skill cannot and must not attempt it. Subagents inherit the
-session's mode, so one elevated launch covers the whole tier tree. The
-project's launcher is named in bindings. If you find yourself invoked
-interactively without that context and the mission implies unattended
-operation, say so and point the user at the launcher instead of limping
-through permission prompts.
+An unattended supervisor session must be started with elevated
+permissions and remote steering (the project's launcher, named in
+bindings) — a skill cannot escalate its own permissions, and subagents
+inherit the launched mode. If you are invoked interactively but the
+mission implies unattended operation, say so and point the user at the
+launcher.
 
 ## Core stance
 
-- You hold the narrative thread; workers are disposable. All durable state
-  lives outside agent windows: the task board, the repo, `.anthill/`.
-- Workers are NOT resumable. Teardown-and-respawn is the designed
-  lifecycle — have workers land state (commit + status) first when possible.
+You hold the narrative thread; workers are disposable and not resumable —
+teardown-and-respawn is the designed lifecycle. Durable state lives
+outside agent windows: the repo, `.anthill/`, and the harness task board
+— with one caveat: the board is session-scoped. It outlives every worker
+but dies with your session, so it only crosses a session boundary via a
+`rehydrate` snapshot. Have workers land state (commit + status) before
+teardown when possible.
 
-## Spawning: task board first, then brief
+## Spawning
 
-1. Create one shared task per mission BEFORE spawning; the description is
-   self-contained (goal, pointers, deliverables, definition of done).
+1. Create one shared task per mission before spawning, with a
+   self-contained description (goal, pointers, deliverables, definition
+   of done).
 2. Spawn named background agents. Briefs follow
-   `.anthill/supervisor/brief-template.md`; first line invokes the
+   `.anthill/supervisor/brief-template.md`; the first line invokes the
    autonomy-contract skill, never restated inline.
 3. Verify every skill/command name in a brief against bindings — workers
    inherit your mistakes.
 
 ## Steering
 
-- Every wake-up (message, silence-check, rehydration) starts with the
-  wake-up protocol (`wake-up` skill), before other steering. That drain
-  includes your durable control flag `.anthill/supervisor/control.md`
-  (pause/stop) — honor it before issuing work. The crossed-messages and
-  bounded-silence rules below are instances of its signals-are-hints stance —
-  trust task state, not the message.
-- Bounded reads: never replay worker output; truth = task state + worker
-  messages. Summarize to the user, never forward raw.
-- Crossed messages: on an idle notification, check the task list; task
-  still pending/in-progress → re-send a compact go/resume signal.
-- Sequencing disputes: keep the user's order unless wrong; fold worker
-  concerns into later verification.
-- Reassignment: idle worker beats a queue; tell the user you diverged.
-- Bounded silence: past the bindings' threshold with no transition and no
-  message → peek task state, ping once, then recycle.
+- Trust task state over messages (wake-up's signals-are-hints stance).
+  On an idle notification with the task still in progress, re-send a
+  compact resume signal. Past the silence threshold with no transition
+  and no message: peek task state, ping once, then recycle.
+- Don't replay worker output; truth is task state plus worker reports.
+  Summarize to the user, never forward raw.
+- You may deviate from planned sequencing when the situation warrants it
+  (an idle worker, an order that turns out wrong) — tell the user you
+  diverged.
 
-## Worker lifecycle & context economy
+## Worker lifecycle
 
-- Worker cap: per bindings (a derived value — re-derive if the
+- Worker cap per bindings (a derived value — re-derive if the
   environment changed).
 - Recycle early: heavy window → land state, tear down, spawn cold on the
   next task. One fresh worker per unrelated task; batch only genuinely
   related ones.
-- Brief workers to offload large/exploratory reads to throwaway subagents
+- Brief workers to push large exploratory reads onto throwaway subagents
   that return conclusions only.
 
 ## Investigation scratchpad
 
-When you spawn a subagent to investigate or analyze and consume only its
-conclusion, the reasoning must not be lost with the subagent's window.
-Instruct the subagent to write its reasoning trail — what it examined,
-the evidence found, how the conclusion follows — to
-`.anthill/supervisor/scratchpad/<yyyy-mm-dd>-<topic>.md` before returning
-the conclusion, and to include that file path with the conclusion. If the
-subagent type is read-only (e.g. Explore), have it return the full trail
-inline and persist it to the scratchpad yourself. When a
-conclusion drives a decision the user might question, reference the
-scratchpad file so the reasoning can be audited or a false conclusion
-troubleshot later.
+When a subagent investigates and you consume only its conclusion, have
+it write its reasoning trail to
+`.anthill/supervisor/scratchpad/<yyyy-mm-dd>-<topic>.md` and return the
+path with the conclusion (persist the trail yourself if the agent type
+is read-only). Reference the file when the conclusion drives a decision
+the user might question.
 
-## Exclusive-resource arbitration
+## Exclusive resources
 
-Workers share the exclusive resources listed in bindings. Territory per
-brief; sequence access; grant explicit priority to a blocked worker;
-diagnose resource health (states + remedies per bindings) before anything
-else. Worker-vs-worker friction is coordination, never a user
-escalation, never a task failure.
+Assign territory per brief; sequence access to shared resources; give a
+blocked worker explicit priority. Diagnose resource health (states and
+remedies per bindings) before escalating. Worker-vs-worker friction is
+coordination — never a user escalation, never a task failure.
 
 ## Evidence-based done
 
 Every definition of done names the evidence to attach. Verify evidence,
 not assertions — "done" without evidence is not done. Mandatory evidence
-per deliverable class: see bindings.
+per deliverable class: bindings.
 
 ## User communication
 
-- Report only: milestones, decisions taken on the user's behalf,
-  blockers/friction. Never partial status; never intermediate completions.
-- Timestamp-prefix every message (HH:mm).
-- If staying silent, stay silent — no narrating the hold.
-- Escalate only: destructive/irreversible, needs-decision, terminal.
-- Deliverables as files with one-line captions; push-notify only when the
-  user is away AND the news is actionable.
+Report milestones, decisions taken on the user's behalf, and blockers —
+not partial status or intermediate completions. Escalate only what is
+destructive/irreversible, needs a decision, or is terminal. Deliverables
+as files with one-line captions. If staying silent, stay silent.
 
-## Agenda (rehydration)
+## Agenda
 
-`agenda.md` holds ONLY user intent — goals, directives, priorities,
-constraints. No findings, no progress (recreate those from the task
-board, git log, and decision log). Update it whenever user intent
-changes. In the controller state model (`wake-up`), `agenda.md` is your
-*intent* and the task board is your *position*; the task board already
-records batch position, so you keep no separate progress ledger. On
-supervisor context degradation: land worker state, tear down, end; a
-successor bootstraps from bindings → agenda → task board → decision log.
+`agenda.md` holds user intent only — goals, directives, priorities,
+constraints. No findings or progress; those live in the task board, git
+log, and decision log. Update it whenever user intent changes: remove
+goals as they are fulfilled, add new ones as they surface. On context
+degradation, run the `rehydrate` skill — land worker state, snapshot the
+board to `.anthill/supervisor/board.md`, end. A successor bootstraps
+from bindings → agenda → board snapshot → decision log; with no snapshot
+(the session died cold), it rebuilds the board from agenda + backlog +
+git log.
 
-## Standing improvement duty
+## Improvement duty
 
-Steering reveals tooling/process gaps → file a backlog proposal
+Steering reveals a tooling or process gap → file a backlog item
 immediately (intake command in bindings). Flagging is always-on.
 
 ## Wrap-up
 
-1. Missions done/handed off → workers land state; shutdown handshake.
-2. Commit+push remaining supervisor artifacts (path-scoped).
-3. Final summary: outcomes, artifacts, deferred work, decisions taken.
-   Ping once. End.
+Workers land state; shutdown handshake; clean up agenda - remove goals 
+& tasks that are completed, preserve anything still outstanding.
+commit and push remaining supervisor artifacts (path-scoped); 
+final summary (outcomes, artifacts, deferred work, decisions taken). 
+Ping once. End.

@@ -24,7 +24,8 @@ log-and-continue vs. stop-and-ask rules below.
 
 ## Working rules
 
-- Work on a feature branch, never directly on main. Commit a checkpoint at
+- Follow the project's branch discipline (`.anthill/resources.md` /
+  `autonomy.md`); if none is stated, work on a branch. Commit a checkpoint at
   every working state. Under co-tenancy (other agents share this checkout):
   use the shared integration branch instead of a per-agent branch, stage only
   your own paths (never `git add -A`), tag commits with your task id.

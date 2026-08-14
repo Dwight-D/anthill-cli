@@ -18,7 +18,7 @@ artifacts live here; both are **seeded on first use**, not pre-filled config.
   parent tier (or the user) writes it; the dispatcher only reads it and
   acknowledges by landing state.
 
-Both are instances of the general controller-state model defined in the
-`wake-up` skill (intent / position / control). They carry no project-specific
-configuration — the dispatcher's actual bindings are in
-`.anthill/backlog/bindings.md` and `.anthill/resources.md`.
+Both follow the `wake-up` skill's durable-state discipline (state first,
+signal second). They carry no project-specific configuration — the
+dispatcher's actual bindings are in `.anthill/backlog/bindings.md` and
+`.anthill/resources.md`.

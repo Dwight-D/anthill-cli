@@ -9,15 +9,6 @@ Project-specific tier of the supervisor mechanism. The general contract
 lives in `.claude/skills/supervisor/SKILL.md` and loads this file on
 invocation.
 
-## Launching an unattended supervisor session
-
-<Your launcher command — e.g. `bash tools/supervise.sh <mission…>` or
-`.\tools\supervise.ps1`. It must start the session with elevated
-permissions + remote steering (the harness forbids in-session escalation;
-subagents inherit the launched mode). See `tools/supervise.sh` / `.ps1` in
-this template for the pattern.> Do not put `bypassPermissions` in
-`defaultMode` — keep elevation a per-launch decision via the script.
-
 ## Worker cap and exclusive resources
 
 The inventory (each exclusive resource + its health states, remedies,

@@ -23,9 +23,13 @@ Shared resources: <rules per .anthill/supervisor/bindings.md — VCS
 discipline, resource turn-taking>
 
 REPORTING
-Update your shared task only on material transitions: working / blocked /
-needs-decision / done / failed. One-line comment on blocked /
-needs-decision. Message the supervisor at deliverable milestones and
-escalations. No chatter. Before reporting blocked, consider whether the
-blocker is the other worker's in-progress work — report that as
-co-tenancy friction instead.
+Reply to: <the exact message target, written by the spawner — the
+registered agent name or the raw agentId from the spawn result. Never a
+bare role word like "the supervisor"; if no handle resolves, report in
+your final message>
+Land state before signaling: put results somewhere durable first (commit,
+item body, escalation record), then message — a lost message must cost
+latency, never content. Report on material transitions only: blocked /
+needs-decision / done / failed, one line each. No chatter. Before
+reporting blocked, consider whether the blocker is the other worker's
+in-progress work — report that as co-tenancy friction instead.

@@ -2,6 +2,28 @@
 
 Release notes for the Anthill CLI. Newest first.
 
+## Unreleased
+
+### Added
+
+- **Re-embed the framework template at upstream ref `17a0ea2`.** The pinned
+  template now carries:
+  - the new `rehydrate` general-tier skill (supervisor session handoff via a
+    task-board snapshot at `.anthill/supervisor/board.md`) — general-tier
+    skill count is now **twelve**;
+  - the rewritten `wake-up`, `supervisor`, and `dispatch-loop` skills
+    (concision pass; yield-by-cause rule; no-destructive-orphan-recovery;
+    a missing control flag reads as `run`) and the updated `autonomous`
+    skill (branch discipline deferred to project config);
+  - the updated `supervisor/brief-template.md` (spawner-injected reply
+    handle, durable-state-before-signal) and `dispatch/README.md`;
+  - the `.anthill/` template updates that shipped upstream alongside the
+    project-owned change-type vocabulary (declared `change-types` /
+    `never-auto-change-types` frontmatter in `workstreams.md`), previously
+    missing from the vendored payload.
+
+  Payload files are normalized to LF line endings.
+
 ## 0.0.5 — 2026-07-21
 
 ### Changed
