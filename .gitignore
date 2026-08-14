@@ -10,7 +10,3 @@ Thumbs.db
 /anthill
 /anthill.exe
 *.test
-
-# The supervisor scratchpad is runtime-only (its own .gitignore keeps README).
-# Runtime backlog items, agenda contents, and escalation records ARE checked
-# in by design — they are the harness's durable state.

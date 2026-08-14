@@ -2,53 +2,27 @@
 
 This repo builds the **Anthill CLI** (Go): the command-line tool that owns the
 backlog and escalation schemas and the verbs the Anthill harness skills bind
-to. The repo also runs the Anthill harness on itself — general-tier skills in
-`.claude/skills/`, project config in `.anthill/`.
+to, plus the bootstrap surface (`bootstrap`, `scaffold`, `init`, `doctor`,
+`sync`, `version`, `validate`). It embeds the framework template from the
+sibling `anthill-fw` repository (`go:embed`, pinned ref) — the CLI is
+distributed via `go install`, separate from the framework files it installs.
 
-## Safety invariants (ask first / never)
+Work on this repo is coordinated by the Anthill installation in the **parent
+directory** (`../.anthill/`, workstream `cli`) — there is no installation
+embedded here. The parent's CLAUDE.md carries the always-on harness
+invariants; this file adds only repo specifics.
 
-The small always-on set that binds in EVERY mode, including autonomous and
-supervised work. Ask rules interrupt even under bypass permissions.
+## Repo specifics
 
-- **Destructive / irreversible git & release actions** — force-push, history
-  rewrite, deleting a branch, committing directly to `main`, or publishing a
-  release / pushing a tag: stop and ask, with a recommendation.
-- **Harness durable state** — do not delete or overwrite `.anthill/` runtime
-  state (backlog items, escalation records, `agenda.md`, the changelogs/LOG)
-  except through the normal close/apply flows. Bulk removal → ask.
-- **Config-file ownership (user edits only)** — `CLAUDE.md` (this file),
-  `.claude/settings*.json` and any permission surface, CI config, and the
-  **general-tier skills `.claude/skills/*`**: these are copied verbatim from
-  upstream Anthill and are immutable here — upgrade by re-copying the skill
-  file, never by local edit. (The `autonomous` skill's project-specific inputs
-  — its proceed-list and decisions-log path — live in `.anthill/autonomy.md`,
-  specific-tier config the skill loads at invocation; editing that file is not
-  a skill edit.) A framework gap is filed upstream, not patched locally; see
-  `.anthill/framework.md`.
-- **Schema irreversibles** — changing the backlog/escalation frontmatter schema
-  or the id scheme once items exist (the CLI is the schema owner): stop and ask.
-
-## Modes are entered via skills, never ambient
-
-Interactive, one-request-at-a-time behavior is the baseline. Elevated modes —
-autonomy (`autonomous`), supervision (`supervisor`), dispatching
-(`dispatch` / `dispatch-loop`) — are opt-in contracts entered ONLY by invoking
-the skill. Never assume autonomy or spawn a team uninvited. A skill cannot
-self-escalate permissions; elevation is a launcher concern (`tools/supervise.*`).
-
-## Improvement flagging is always-on
-
-Whenever you hit friction — a missing tool, a rough process, a recurring
-papercut — file it to the backlog immediately. Submission is deliberately dumb:
-a **title** + a **value** (the pain it removes or potential it unlocks) is the
-whole ask; triage decides the rest. Flagging is always-on in every mode;
-*implementing* is opt-in via `triage`/`dispatch`. See
-`.anthill/backlog/README.md` for the intake path.
-
-## Backlog scope
-
-Work intake lives in `.anthill/backlog/`. CLI features/commands/schema route to
-`cli`; dev tooling (build, test, CI, lint) to `dev`; defects to `bugs`; docs
-and process/harness config to `process`. If it fits nowhere, triage rejects it
-with a reason. Evidence for done: `go build ./...` and `go test ./...` exit 0,
-plus the item's own `verify`.
+- **Contracts:** `docs/CLI_INTERFACE_SPEC.md` is the accepted v1
+  backlog/escalation surface; `../anthill-fw/CLI_SPEC.md` is the
+  bootstrapping-surface contract. A divergence between CLI behavior and spec
+  is a bug (fix the CLI) or a spec change (a `framework` backlog item) —
+  never silently absorbed.
+- **Evidence for done:** `go build ./...` exit 0 and `go test ./...` exit 0,
+  plus the item's own `verify`.
+- **Schema irreversibles (ask first):** changing the backlog/escalation
+  frontmatter schema or the id scheme once items exist — the CLI is the
+  schema owner; schema changes are permanent and cross-cutting.
+- **Release acts (ask first):** merging to `main`, pushing a tag, bumping the
+  embedded template ref (re-vendoring from `anthill-fw`).
