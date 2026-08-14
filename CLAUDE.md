@@ -24,5 +24,6 @@ invariants; this file adds only repo specifics.
 - **Schema irreversibles (ask first):** changing the backlog/escalation
   frontmatter schema or the id scheme once items exist — the CLI is the
   schema owner; schema changes are permanent and cross-cutting.
-- **Release acts (ask first):** merging to `main`, pushing a tag, bumping the
-  embedded template ref (re-vendoring from `anthill-fw`).
+- **Release acts (ask first):** pushing a tag, bumping the embedded template
+  ref (re-vendoring from `anthill-fw`). Committing to `main` is fine; bigger
+  changes go branch-and-merge, and merges are ask-first unless instructed.
