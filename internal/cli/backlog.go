@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"sort"
 	"strings"
 	"time"
 
@@ -124,7 +123,7 @@ func (a *App) newBacklogList() *cobra.Command {
 			if err != nil {
 				return internalErr(err.Error())
 			}
-			sortItems(filtered, sortMode, order)
+			backlog.SortItems(filtered, sortMode, order)
 			if a.json {
 				return a.emitJSON(viewItems(filtered))
 			}
@@ -402,33 +401,18 @@ func (a *App) newBacklogClose() *cobra.Command {
 			var disposition string
 			changelog := false
 			switch {
-			case done:
-				if it.Status != "in-progress" {
-					return preconditionErr("item " + id + " is " + it.Status + ", not in-progress; only a claimed item can be closed --done")
+			case done, discard, remove:
+				disposition = "done"
+				if discard {
+					disposition = "discard"
 				}
-				if err := store.Delete(it); err != nil {
-					return internalErr(err.Error())
+				if remove {
+					disposition = "remove"
 				}
-				if err := store.AppendChangelog(id, "done", logText); err != nil {
-					return internalErr(err.Error())
+				if err := store.Close(it, disposition, logText); err != nil {
+					return wrapStoreErr(err)
 				}
-				disposition, changelog = "done", true
-			case discard:
-				if err := store.Delete(it); err != nil {
-					return internalErr(err.Error())
-				}
-				if err := store.AppendChangelog(id, "discarded", logText); err != nil {
-					return internalErr(err.Error())
-				}
-				disposition, changelog = "discard", true
-			case remove:
-				if err := store.Delete(it); err != nil {
-					return internalErr(err.Error())
-				}
-				if err := store.AppendChangelog(id, "removed", logText); err != nil {
-					return internalErr(err.Error())
-				}
-				disposition, changelog = "remove", true
+				changelog = true
 			case block:
 				if it.Status != "in-progress" {
 					return preconditionErr("item " + id + " is " + it.Status + ", not in-progress; only a claimed item can be blocked")
@@ -479,11 +463,7 @@ func (a *App) newBacklogApprove() *cobra.Command {
 			if err != nil {
 				return wrapStoreErr(err)
 			}
-			if it.Status != "idea" {
-				return preconditionErr("item " + id + " is " + it.Status + "; only an item in status idea can be approved")
-			}
-			it.Status = "approved"
-			if err := store.Save(it); err != nil {
+			if err := store.Approve(it); err != nil {
 				return wrapStoreErr(err)
 			}
 			if a.json {
@@ -584,49 +564,8 @@ func (a *App) selectNext(store *backlog.Store, workstream string) (*backlog.Item
 	if len(ready) == 0 {
 		return nil, nil
 	}
-	sortItems(ready, "sweep", order)
+	backlog.SortItems(ready, "sweep", order)
 	return ready[0], nil
-}
-
-func sortItems(items []*backlog.Item, mode string, order []string) {
-	wsIndex := map[string]int{}
-	for i, w := range order {
-		wsIndex[w] = i
-	}
-	rank := func(it *backlog.Item) int {
-		if it.Workstream == "" {
-			return len(order) + 1
-		}
-		if i, ok := wsIndex[it.Workstream]; ok {
-			return i
-		}
-		return len(order)
-	}
-	prio := func(it *backlog.Item) int {
-		if it.Priority == "high" {
-			return 0
-		}
-		return 1
-	}
-	sort.SliceStable(items, func(i, j int) bool {
-		switch mode {
-		case "id":
-			return items[i].ID < items[j].ID
-		case "priority":
-			if prio(items[i]) != prio(items[j]) {
-				return prio(items[i]) < prio(items[j])
-			}
-			return items[i].ID < items[j].ID
-		default: // sweep
-			if rank(items[i]) != rank(items[j]) {
-				return rank(items[i]) < rank(items[j])
-			}
-			if prio(items[i]) != prio(items[j]) {
-				return prio(items[i]) < prio(items[j])
-			}
-			return items[i].ID < items[j].ID
-		}
-	})
 }
 
 func toSet(vals []string) map[string]bool {

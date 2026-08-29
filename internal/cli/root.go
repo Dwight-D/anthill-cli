@@ -51,6 +51,7 @@ func newRootCommand(a *App) *cobra.Command {
 		a.newBootstrapCommand(),
 		a.newScaffoldCommand(),
 		a.newSyncCommand(),
+		a.newTUICommand(),
 	)
 	return cmd
 }

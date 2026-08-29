@@ -542,24 +542,58 @@ follow their own `<yyyy-mm-dd>-<slug>` scheme, also slug-based, also no UUID.
 
 ---
 
-## 5. TUI surfaces (optional)
+## 5. TUI — `anthill tui`
 
-Recommendation: **defer the TUI for v1**; ship the scriptable surface first,
-add a TUI only once the verbs are stable. Agents (the primary users) drive this
-headless, so a TUI is a human-convenience layer, not a requirement. When added,
-build it on `bubbletea`/`bubbles`/`lipgloss`, and hold to the rule that every
-interactive action maps 1:1 to an existing non-interactive command:
+`anthill tui` opens a full-screen interactive browser (Bubble Tea, alt-screen)
+over the harness's durable state, rooted at the same resolved `.anthill` root
+as every other command (`--root` / `ANTHILL_ROOT` / upward search). It is a
+human-convenience layer: agents keep driving the scriptable verbs, and no TUI
+surface may perform a mutation that has no command-line equivalent — the TUI
+is a viewport onto the verbs, never a privileged path.
 
-| TUI surface | What it does | Scriptable equivalent |
-|-------------|--------------|-----------------------|
-| `anthill backlog browse` | scrollable, filterable list of items; drill into one | `backlog list` / `backlog show` |
-| — set fields inline | edit `status`/`priority`/`workstream` on the selected item | `backlog set <id> k=v` |
-| — claim/close from the list | pick an item and act | `backlog claim` / `backlog close` |
-| `anthill triage review` | walk untriaged items, apply a classification per the workstream profile | a sequence of `backlog set` calls |
-| `anthill escalation inbox` | browse records addressed to a tier, read Question, answer | `escalation list`/`show`/`answer` |
+### Modes
 
-No TUI surface may perform a mutation that has no command-line equivalent — the
-TUI is a viewport onto the verbs, never a privileged path.
+The TUI is organised around top-level **modes** — switchable screens sharing
+one layout. Each mode supplies the nav-list rows, the detail text for the
+selected row, and the keypress actions that operate on it; the root model owns
+everything visual (layout, pane focus, selection, scrolling, confirm prompts,
+refresh, mode switching). The seam is the `Mode` interface in `internal/tui`:
+adding a mode (Escalations, Agents, ...) is one struct implementing it plus
+one entry in the registry — no root-model changes. The header band shows the
+mode tabs (`1:Backlog ...`) with the active one highlighted; `[m]` cycles
+modes and number keys select one directly.
+
+Implemented modes: **Backlog** (v1). Escalations and Agents are anticipated
+next modes.
+
+### Layout
+
+Three bands: a header (mode tabs + `[key] action` hints), a main area — the
+selected item's frontmatter and body in a scrollable content pane on the
+left, the item list (`id  workstream  status`, sweep order) on the right —
+and a one-line status bar carrying action results, errors, and confirm
+prompts.
+
+### Keys (Backlog mode)
+
+| Key | Action | Scriptable equivalent |
+|-----|--------|-----------------------|
+| `↑/↓` `j/k` | move selection / scroll detail | — |
+| `tab`, `enter`/`esc` | switch pane focus | — |
+| `r` | reload from disk | `backlog list` |
+| `a` | approve the selected item | `backlog approve <id> --yes` |
+| `d` | close as done | `backlog close <id> --done` |
+| `x` | close as discard (confirm: `y`) | `backlog close <id> --discard` |
+| `X` | remove (confirm: `y`) | `backlog close <id> --remove` |
+| `m` / `1..9` | cycle / select mode | — |
+| `q` / `ctrl+c` | quit | — |
+
+Destructive actions (discard, remove) arm a y/n prompt in the status line;
+any key other than `y` cancels. After every action the list reloads in place,
+preserving the selection by item id where the row survives and clamping the
+index otherwise. Preconditions are the verbs' own (approve requires `idea`,
+done requires `in-progress`); violations surface in the status bar, exactly
+as the CLI would exit non-zero.
 
 ---
 
