@@ -239,7 +239,7 @@ func (s *Store) Apply(id, note string) (*Record, error) {
 	if outcome == "" {
 		outcome = firstLine(r.Section("Decision"))
 	}
-	if err := s.appendLog(r, outcome); err != nil {
+	if err := s.appendLog(r, "applied", outcome); err != nil {
 		return nil, err
 	}
 	if err := os.Remove(r.Path); err != nil {
@@ -248,9 +248,52 @@ func (s *Store) Apply(id, note string) (*Record, error) {
 	return r, nil
 }
 
-func (s *Store) appendLog(r *Record, outcome string) error {
-	line := fmt.Sprintf("- %s %s — %s/applied: %s\n",
-		time.Now().Format("2006-01-02"), r.ID, r.To, firstLine(outcome))
+// Close terminates an unanswered (open) record without a decision — the
+// question became moot, was resolved out-of-band, or went stale. One line is
+// filed in LOG.md and the record file is deleted; a record never vanishes
+// silently. reason is the log text and defaults to the record's question.
+// An answered record must go through Apply instead.
+func (s *Store) Close(id, reason string) (*Record, error) {
+	r, err := s.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	if r.Status != "open" {
+		return nil, precond("record %q is %s, not open; an answered record is closed with apply", id, r.Status)
+	}
+	return s.deleteLogged(r, "closed", reason)
+}
+
+// Remove deletes a stale record regardless of status. One line is filed in
+// LOG.md before the file is deleted; a record never vanishes silently. reason
+// is the log text and defaults to the record's question.
+func (s *Store) Remove(id, reason string) (*Record, error) {
+	r, err := s.Find(id)
+	if err != nil {
+		return nil, err
+	}
+	return s.deleteLogged(r, "removed", reason)
+}
+
+// deleteLogged files a LOG.md line for r under the given log word, then
+// deletes the record file.
+func (s *Store) deleteLogged(r *Record, word, reason string) (*Record, error) {
+	outcome := strings.TrimSpace(reason)
+	if outcome == "" {
+		outcome = firstLine(r.Section("Question"))
+	}
+	if err := s.appendLog(r, word, outcome); err != nil {
+		return nil, err
+	}
+	if err := os.Remove(r.Path); err != nil {
+		return nil, fmt.Errorf("delete record after %s: %w", word, err)
+	}
+	return r, nil
+}
+
+func (s *Store) appendLog(r *Record, word, outcome string) error {
+	line := fmt.Sprintf("- %s %s — %s/%s: %s\n",
+		time.Now().Format("2006-01-02"), r.ID, r.To, word, firstLine(outcome))
 	path := s.logPath()
 	existing, err := os.ReadFile(path)
 	if err != nil && !os.IsNotExist(err) {

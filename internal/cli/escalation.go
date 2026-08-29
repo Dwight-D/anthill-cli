@@ -13,7 +13,7 @@ func (a *App) newEscalationCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "escalation",
 		Aliases: []string{"esc"},
-		Short:   "Raise, list, answer, and apply escalation records",
+		Short:   "Raise, list, answer, apply, close, and remove escalation records",
 	}
 	cmd.AddCommand(
 		a.newEscalationRaise(),
@@ -21,6 +21,8 @@ func (a *App) newEscalationCommand() *cobra.Command {
 		a.newEscalationShow(),
 		a.newEscalationAnswer(),
 		a.newEscalationApply(),
+		a.newEscalationClose(),
+		a.newEscalationRemove(),
 	)
 	return cmd
 }
@@ -186,6 +188,66 @@ func (a *App) newEscalationApply() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&note, "note", "", "one-line outcome appended under ## Applied")
+	return cmd
+}
+
+func (a *App) newEscalationClose() *cobra.Command {
+	// The reason is an optional second positional, mirroring `backlog close`;
+	// when omitted, the LOG.md line falls back to the record's question.
+	cmd := &cobra.Command{
+		Use:   "close <id> [\"reason\"]",
+		Short: "Close an unanswered (open) record without a decision: log, delete",
+		Args:  cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			reason := ""
+			if len(args) == 2 {
+				reason = args[1]
+			}
+			store, err := a.escalationStore()
+			if err != nil {
+				return err
+			}
+			r, err := store.Close(args[0], reason)
+			if err != nil {
+				return wrapStoreErr(err)
+			}
+			if a.json {
+				return a.emitJSON(map[string]any{"id": r.ID, "closed": true, "logged": true})
+			}
+			a.note("closed %s", r.ID)
+			return nil
+		},
+	}
+	return cmd
+}
+
+func (a *App) newEscalationRemove() *cobra.Command {
+	// The reason is an optional second positional, mirroring `backlog close`;
+	// when omitted, the LOG.md line falls back to the record's question.
+	cmd := &cobra.Command{
+		Use:   "remove <id> [\"reason\"]",
+		Short: "Remove a stale record regardless of status: log, delete",
+		Args:  cobra.RangeArgs(1, 2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			reason := ""
+			if len(args) == 2 {
+				reason = args[1]
+			}
+			store, err := a.escalationStore()
+			if err != nil {
+				return err
+			}
+			r, err := store.Remove(args[0], reason)
+			if err != nil {
+				return wrapStoreErr(err)
+			}
+			if a.json {
+				return a.emitJSON(map[string]any{"id": r.ID, "removed": true, "logged": true})
+			}
+			a.note("removed %s", r.ID)
+			return nil
+		},
+	}
 	return cmd
 }
 

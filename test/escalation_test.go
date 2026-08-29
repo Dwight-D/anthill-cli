@@ -194,6 +194,72 @@ func TestEscalationApplyNotAnswered(t *testing.T) {
 	wantExit(t, r, 6)
 }
 
+// TestEscalationClose covers `escalation close` (spec §3.14): an unanswered
+// (open) record is closed without a decision — one LOG.md line, file deleted.
+func TestEscalationClose(t *testing.T) {
+	root := mkTree(t)
+	id := raiseOne(t, root, "Never answered")
+
+	before := readAll(t, escalLogPath(root))
+	r := runIn(t, root, "--json", "escalation", "close", id, "went stale")
+	wantExit(t, r, 0)
+
+	obj := jsonObj(t, r.stdout)
+	if obj["closed"] != true || obj["logged"] != true {
+		t.Fatalf("json = %v, want closed+logged true", obj)
+	}
+	wantFileGone(t, escalDir(root)+"/"+id+".md")
+	after := readAll(t, escalLogPath(root))
+	if after == before {
+		t.Fatalf("close must append a line to LOG.md; content unchanged")
+	}
+	wantContains(t, after, "closed: went stale", "LOG.md after close")
+}
+
+// TestEscalationCloseAnswered covers exit 6: an answered record cannot be
+// closed — it must go through apply (spec §3.14).
+func TestEscalationCloseAnswered(t *testing.T) {
+	root := mkTree(t)
+	id := raiseOne(t, root, "Answered already")
+	runIn(t, root, "escalation", "answer", id, "--decision", "go")
+	r := runIn(t, root, "escalation", "close", id)
+	wantExit(t, r, 6)
+	wantFilePresent(t, escalDir(root)+"/"+id+".md")
+}
+
+// TestEscalationCloseNotFound covers exit 4.
+func TestEscalationCloseNotFound(t *testing.T) {
+	root := mkTree(t)
+	r := runIn(t, root, "escalation", "close", "2000-01-01-nope")
+	wantExit(t, r, 4)
+}
+
+// TestEscalationRemove covers `escalation remove` (spec §3.15): a stale record
+// is deleted regardless of status, with a LOG.md line.
+func TestEscalationRemove(t *testing.T) {
+	root := mkTree(t)
+	id := raiseOne(t, root, "Stale but answered")
+	runIn(t, root, "escalation", "answer", id, "--decision", "moot")
+
+	r := runIn(t, root, "--json", "escalation", "remove", id)
+	wantExit(t, r, 0)
+	obj := jsonObj(t, r.stdout)
+	if obj["removed"] != true || obj["logged"] != true {
+		t.Fatalf("json = %v, want removed+logged true", obj)
+	}
+	wantFileGone(t, escalDir(root)+"/"+id+".md")
+	after := readAll(t, escalLogPath(root))
+	wantContains(t, after, id, "LOG.md after remove")
+	wantContains(t, after, "removed:", "LOG.md after remove")
+}
+
+// TestEscalationRemoveNotFound covers exit 4.
+func TestEscalationRemoveNotFound(t *testing.T) {
+	root := mkTree(t)
+	r := runIn(t, root, "escalation", "remove", "2000-01-01-nope")
+	wantExit(t, r, 4)
+}
+
 // TestEscalationLifecycle exercises the full raise → list → show → answer →
 // apply lifecycle end to end (spec §3.9–3.13).
 func TestEscalationLifecycle(t *testing.T) {

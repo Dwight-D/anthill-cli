@@ -138,7 +138,9 @@ anthill
     ├── list                    list records (filters: --to --status --item)
     ├── show* <id>              print one record
     ├── answer <id> --decision "…"   append ## Decision, set status: answered
-    └── apply <id>              append ## Applied, one-line LOG.md, delete the record
+    ├── apply <id>              append ## Applied, one-line LOG.md, delete the record
+    ├── close <id> ["reason"]   close an unanswered record: one-line LOG.md, delete
+    └── remove <id> ["reason"]  remove a stale record (any status): one-line LOG.md, delete
 ```
 
 Notation below for each command: **Purpose · Args · Flags · Reads · Writes ·
@@ -448,7 +450,44 @@ Human output · `--json` output · Exit codes.**
 
 ---
 
-### 3.14 `anthill init` *(proposed lifecycle helper)*
+### 3.14 `anthill escalation close`
+
+- **Purpose.** Close an unanswered (open) record without a decision — the
+  question became moot, was resolved out-of-band, or went stale. The
+  raise → answer → apply lifecycle is for records that get a decision; `close`
+  is the sanctioned exit for records that never will.
+- **Args.** `<id> ["<reason>"]`. The reason is an optional second positional
+  (mirroring `backlog close`); when omitted, the LOG.md line falls back to the
+  record's question.
+- **Reads.** the record, `LOG.md`.
+- **Writes.** adds one line to `escalations/LOG.md`
+  (`<date> <file> — <to>/closed: <reason/question>`), then deletes the record
+  file. A record never vanishes silently.
+- **Human output.** `closed <id>` on stderr.
+- **`--json`.** `{ "id": …, "closed": true, "logged": true }`.
+- **Exit codes.** 0; 4 (not found); 6 (record is not `open` — an answered
+  record is closed with `apply`, or force-deleted with `remove`).
+
+---
+
+### 3.15 `anthill escalation remove`
+
+- **Purpose.** Delete a stale record regardless of status. The destructive
+  escape hatch for records that no lifecycle verb fits any more (superseded,
+  duplicated, orphaned by a recycled session).
+- **Args.** `<id> ["<reason>"]`. The reason is an optional second positional;
+  when omitted, the LOG.md line falls back to the record's question.
+- **Reads.** the record, `LOG.md`.
+- **Writes.** adds one line to `escalations/LOG.md`
+  (`<date> <file> — <to>/removed: <reason/question>`), then deletes the record
+  file. A record never vanishes silently.
+- **Human output.** `removed <id>` on stderr.
+- **`--json`.** `{ "id": …, "removed": true, "logged": true }`.
+- **Exit codes.** 0; 4 (not found).
+
+---
+
+### 3.16 `anthill init` *(proposed lifecycle helper)*
 
 - **Purpose.** Scaffold a fresh `.anthill/` tree (directory map from
   `.anthill/README.md`): `backlog/{intake,cli,dev,process,bugs}`,
@@ -463,7 +502,7 @@ Human output · `--json` output · Exit codes.**
 
 ---
 
-### 3.15 `anthill doctor` *(proposed lifecycle helper)*
+### 3.17 `anthill doctor` *(proposed lifecycle helper)*
 
 - **Purpose.** One-shot environment + integrity check: `.anthill/` is
   discoverable, required config files present, `workstreams.md` sweep-order
