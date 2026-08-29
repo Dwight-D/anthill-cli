@@ -602,16 +602,16 @@ one entry in the registry — no root-model changes. The header band shows the
 mode tabs (`1:Backlog ...`) with the active one highlighted; `[m]` cycles
 modes and number keys select one directly.
 
-Implemented modes: **Backlog** (v1). Escalations and Agents are anticipated
-next modes.
+Implemented modes: **Backlog**, **Escalations**. Agents is an anticipated
+next mode.
 
 ### Layout
 
 Three bands: a header (mode tabs + `[key] action` hints), a main area — the
-selected item's frontmatter and body in a scrollable content pane on the
-left, the item list (`id  workstream  status`, sweep order) on the right —
-and a one-line status bar carrying action results, errors, and confirm
-prompts.
+selected row's full detail in a scrollable content pane on the left, the
+mode's row list on the right (Backlog: `id  workstream  status` in sweep
+order; Escalations: `id  to  status` sorted by id) — and a one-line status
+bar carrying action results, errors, and confirm prompts.
 
 ### Keys (Backlog mode)
 
@@ -627,7 +627,20 @@ prompts.
 | `m` / `1..9` | cycle / select mode | — |
 | `q` / `ctrl+c` | quit | — |
 
-Destructive actions (discard, remove) arm a y/n prompt in the status line;
+### Keys (Escalations mode)
+
+| Key | Action | Scriptable equivalent |
+|-----|--------|-----------------------|
+| `a` | apply the selected (answered) record | `escalation apply <id>` |
+| `x` | close an unanswered record (confirm: `y`) | `escalation close <id>` |
+| `X` | remove regardless of status (confirm: `y`) | `escalation remove <id>` |
+
+Navigation, refresh, mode, and quit keys are the root model's and identical in
+every mode. Answering and raising need free-text input and stay on the
+scriptable verbs (`escalation answer/raise`) — the TUI has no text-input
+overlay.
+
+Destructive actions (discard, remove, close) arm a y/n prompt in the status line;
 any key other than `y` cancels. After every action the list reloads in place,
 preserving the selection by item id where the row survives and clamping the
 index otherwise. Preconditions are the verbs' own (approve requires `idea`,

@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/Dwight-D/anthill-cli/internal/backlog"
+	"github.com/Dwight-D/anthill-cli/internal/escalation"
 )
 
 // Reserved band heights: header (mode line + hints line) and status line are
@@ -65,6 +66,7 @@ type Model struct {
 func New(root string) Model {
 	return NewWithModes([]Mode{
 		NewBacklogMode(backlog.NewStore(root)),
+		NewEscalationsMode(escalation.NewStore(root)),
 	})
 }
 
