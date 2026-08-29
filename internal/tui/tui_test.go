@@ -14,6 +14,7 @@ type stubMode struct {
 	nextRows []string // if non-nil, Reload swaps these in (simulating disk change)
 	reloads  int
 	acts     []Action
+	detail   string // if non-empty, Detail returns this for every row
 }
 
 func (s *stubMode) Name() string { return s.name }
@@ -27,8 +28,13 @@ func (s *stubMode) Reload() error {
 func (s *stubMode) Len() int            { return len(s.rows) }
 func (s *stubMode) RowID(i int) string  { return s.rows[i] }
 func (s *stubMode) Row(i, w int) string { return s.rows[i] }
-func (s *stubMode) Detail(i int) string { return "detail:" + s.rows[i] }
-func (s *stubMode) Actions() []Action   { return s.acts }
+func (s *stubMode) Detail(i int) string {
+	if s.detail != "" {
+		return s.detail
+	}
+	return "detail:" + s.rows[i]
+}
+func (s *stubMode) Actions() []Action { return s.acts }
 
 func key(s string) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(s)}

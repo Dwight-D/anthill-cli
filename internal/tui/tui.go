@@ -119,13 +119,16 @@ func (m *Model) reload() {
 	m.refreshDetail()
 }
 
-// refreshDetail re-renders the selected row's detail into the viewport.
+// refreshDetail re-renders the selected row's detail into the viewport,
+// wrapped to the detail pane's inner width so nothing is clipped off-screen.
+// The root re-invokes this on width change (preserving the scroll offset), so
+// the wrap always matches the live pane width.
 func (m *Model) refreshDetail() {
 	if m.mode().Len() == 0 {
 		m.viewport.SetContent("no items")
 		return
 	}
-	m.viewport.SetContent(m.mode().Detail(m.selected))
+	m.viewport.SetContent(wrapCells(m.mode().Detail(m.selected), m.leftInnerW()))
 }
 
 func (m *Model) setStatus(s string, isErr bool) {
