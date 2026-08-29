@@ -162,6 +162,55 @@ func TestCloseDoneJSON(t *testing.T) {
 	}
 }
 
+// TestCloseBareDispositionAfterID is the regression for the flag-parsing bug
+// (backlog item "Fix backlog close"): the disposition flags were string flags,
+// so a bare `close <id> --remove` died with "flag needs an argument". The
+// dispositions are pure booleans; a bare flag after the id must work, with the
+// CHANGELOG line falling back to the item title.
+func TestCloseBareDispositionAfterID(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "bare-item", claimedFields("Bare item", "cli"), "body")
+
+	r := runIn(t, root, "backlog", "close", "bare-item", "--remove")
+	wantExit(t, r, 0)
+
+	wantFileGone(t, itemPath(root, "cli", "bare-item"))
+	changelog := readAll(t, changelogPath(root))
+	wantContains(t, changelog, "removed", "CHANGELOG after bare --remove")
+	wantContains(t, changelog, "Bare item", "CHANGELOG reason falls back to title")
+}
+
+// TestCloseDispositionBeforeID is the companion regression: with string flags,
+// `close --remove <id>` swallowed the id as the flag's value and the command
+// failed for want of a positional. The id must parse as the positional in
+// either flag order.
+func TestCloseDispositionBeforeID(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "order-item", claimedFields("Order item", "cli"), "body")
+
+	r := runIn(t, root, "backlog", "close", "--remove", "order-item")
+	wantExit(t, r, 0)
+
+	wantFileGone(t, itemPath(root, "cli", "order-item"))
+	changelog := readAll(t, changelogPath(root))
+	wantContains(t, changelog, "order-item", "CHANGELOG after --remove <id>")
+}
+
+// TestCloseFlagFirstWithReason covers flag-first order with an explicit reason:
+// `close --discard <id> "reason"` — the id is the first positional, the reason
+// the second, regardless of where the boolean flag sits.
+func TestCloseFlagFirstWithReason(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "why-item", claimedFields("Why item", "cli"), "body")
+
+	r := runIn(t, root, "backlog", "close", "--discard", "why-item", "duplicate of other-item")
+	wantExit(t, r, 0)
+
+	wantFileGone(t, itemPath(root, "cli", "why-item"))
+	changelog := readAll(t, changelogPath(root))
+	wantContains(t, changelog, "duplicate of other-item", "CHANGELOG carries the explicit reason")
+}
+
 // TestCloseNoDisposition covers exit 2 when no disposition flag is given.
 func TestCloseNoDisposition(t *testing.T) {
 	root := mkTree(t)

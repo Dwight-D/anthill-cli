@@ -131,7 +131,7 @@ anthill
 │   ├── set <id> key=value…     mutate frontmatter; workstream= moves the file
 │   ├── next                    print the next dispatchable item (sweep order)
 │   ├── claim <id> | --next     atomically mark an item in-progress
-│   ├── close <id> --done | --discard "…" | --remove "…" | --block "…"
+│   ├── close <id> ["reason"] --done|--discard|--remove|--block
 │   └── validate [--strict]     validate backlog items
 └── escalation
     ├── raise                   create an escalation record
@@ -294,12 +294,16 @@ Human output · `--json` output · Exit codes.**
 
 - **Purpose.** Terminate or block a claimed item. Exactly one disposition flag
   is required.
-- **Args.** `<id>`.
-- **Flags** (mutually exclusive, one required):
+- **Args.** `<id> ["<reason>"]`. The reason is an optional second positional;
+  when omitted, the CHANGELOG line falls back to the item title (and `--block`
+  leaves `note` empty).
+- **Flags** (mutually exclusive, one required; pure booleans — a disposition
+  flag never consumes a value, so the id parses as the positional in either
+  order: `close <id> --done` and `close --done <id>` are equivalent):
   - `--done` — completed successfully.
-  - `--discard "<reason>"` — decided not worth doing.
-  - `--remove "<reason>"` — obsolete / superseded / rejected.
-  - `--block "<reason>"` — cannot proceed right now (dependency, escalation).
+  - `--discard` — decided not worth doing.
+  - `--remove` — obsolete / superseded / rejected.
+  - `--block` — cannot proceed right now (dependency, escalation).
 - **Reads.** the item, `CHANGELOG.md`.
 - **Writes.**
   - `--done` / `--discard` / `--remove` are **terminal**: delete the item file
