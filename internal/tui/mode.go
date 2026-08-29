@@ -40,7 +40,9 @@ type Mode interface {
 	Actions() []Action
 }
 
-// Action is one keypress operation on the selected row.
+// Action is one keypress operation on the selected row. Exactly one of Do
+// and DoInput is set: plain actions run Do (optionally confirm-gated),
+// free-text actions set Input and run DoInput with the submitted text.
 type Action struct {
 	// Key is the Bubble Tea key string that triggers the action (e.g. "a").
 	Key string
@@ -49,8 +51,14 @@ type Action struct {
 	// Confirm marks a destructive action: the root interposes a y/n prompt
 	// in the status line before running Do.
 	Confirm bool
+	// Input marks a free-text action: the root opens a text-entry overlay
+	// and passes the submitted text to DoInput instead of calling Do.
+	Input bool
 	// Do performs the action on row i via the domain layer and returns a
 	// short status-line message. The root reloads the mode afterwards,
 	// preserving the selection position where sensible.
 	Do func(i int) (string, error)
+	// DoInput performs an Input action on row i with the overlay's submitted
+	// text (never empty). Same contract as Do otherwise.
+	DoInput func(i int, text string) (string, error)
 }

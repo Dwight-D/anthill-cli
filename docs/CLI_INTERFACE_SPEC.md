@@ -620,6 +620,15 @@ mode's row list on the right (Backlog: `id  workstream  status` in sweep
 order; Escalations: `id  to  status` sorted by id) — and a one-line status
 bar carrying action results, errors, and confirm prompts.
 
+**Wrapping.** Detail-pane content is word-wrapped to the pane's inner width
+before it enters the viewport — cell-accurate (wide runes count their display
+width), preferring word boundaries and hard-breaking tokens wider than the
+pane (URLs, hashes) — so no detail text is ever clipped off-screen. A
+terminal-width change re-wraps in place, preserving the scroll offset. List
+rows, the header bands, and the status line stay single-line and
+cell-truncated by design; everything a list row truncates is fully readable
+in the detail pane.
+
 ### Keys (Backlog mode)
 
 | Key | Action | Scriptable equivalent |
@@ -638,14 +647,23 @@ bar carrying action results, errors, and confirm prompts.
 
 | Key | Action | Scriptable equivalent |
 |-----|--------|-----------------------|
-| `a` | apply the selected (answered) record | `escalation apply <id>` |
+| `a` | answer the selected (open) record via the text overlay | `escalation answer <id> --decision <text>` |
+| `p` | apply the selected (answered) record | `escalation apply <id>` |
 | `x` | close an unanswered record (confirm: `y`) | `escalation close <id>` |
 | `X` | remove regardless of status (confirm: `y`) | `escalation remove <id>` |
 
 Navigation, refresh, mode, and quit keys are the root model's and identical in
-every mode. Answering and raising need free-text input and stay on the
-scriptable verbs (`escalation answer/raise`) — the TUI has no text-input
-overlay.
+every mode. Raising still needs structured input and stays on the scriptable
+`escalation raise` verb.
+
+**Text overlay.** A free-text action (`a` answer) opens a centered text-entry
+overlay over the main area; while open it owns every key. `ctrl+s` submits
+(`enter` inserts a newline in the multi-line textarea, so it cannot be the
+submit key) and `esc` cancels; the header hint line swaps to the overlay's
+keys while it is open. An empty or whitespace-only submission is rejected in
+the status line and the overlay stays open. Submission runs the same domain
+operation as the scriptable verb, then reloads in place — the answered record
+shows its `answered` status and `## Decision` section in the detail pane.
 
 Destructive actions (discard, remove, close) arm a y/n prompt in the status line;
 any key other than `y` cancels. After every action the list reloads in place,

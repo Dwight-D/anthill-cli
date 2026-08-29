@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -58,6 +59,7 @@ type Model struct {
 	status    string
 	statusErr bool
 	confirm   *pendingConfirm
+	overlay   *textOverlay // nil = no text-entry overlay open
 }
 
 // New builds the root model for the installation rooted at root (the
@@ -141,7 +143,19 @@ func (m *Model) runAction(act Action, i int) {
 	if i >= m.mode().Len() {
 		return
 	}
-	msg, err := act.Do(i)
+	m.finishAction(act.Do(i))
+}
+
+// runInputAction executes a free-text action on row i and reloads in place.
+func (m *Model) runInputAction(act Action, i int, text string) {
+	if i >= m.mode().Len() {
+		return
+	}
+	m.finishAction(act.DoInput(i, text))
+}
+
+// finishAction surfaces an action's outcome in the status line and reloads.
+func (m *Model) finishAction(msg string, err error) {
 	if err != nil {
 		m.setStatus("error: "+err.Error(), true)
 	} else {
@@ -157,6 +171,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.reload()
 		return m, nil
 
+	case statusMsg:
+		m.setStatus(msg.text, msg.isErr)
+		return m, nil
+
 	case tea.WindowSizeMsg:
 		widthChanged := msg.Width != m.width
 		m.width, m.height = msg.Width, msg.Height
@@ -168,9 +186,27 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.refreshDetail()
 			m.viewport.SetYOffset(saved)
 		}
+		if m.overlay != nil {
+			m.overlay.resize(m.width, m.innerH())
+		}
 		return m, nil
 
 	case tea.KeyMsg:
+		// An open overlay owns every key event.
+		if m.overlay != nil {
+			cmd, keepOpen := m.overlay.update(msg)
+			if !keepOpen {
+				o := m.overlay
+				m.overlay = nil
+				if o.text != "" {
+					m.runInputAction(o.act, o.index, o.text)
+				} else {
+					m.setStatus("cancelled", false)
+				}
+			}
+			return m, cmd
+		}
+
 		// An armed confirm prompt gets first refusal on every key.
 		if m.confirm != nil {
 			c := *m.confirm
@@ -237,6 +273,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.setStatus("no items", true)
 					return m, nil
 				}
+				if act.Input {
+					m.overlay = newTextOverlay(act, m.selected, m.mode().RowID(m.selected), m.width, m.innerH())
+					return m, textarea.Blink
+				}
 				if act.Confirm {
 					id := m.mode().RowID(m.selected)
 					m.confirm = &pendingConfirm{action: act, index: m.selected, rowID: id}
@@ -247,6 +287,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		}
+	}
+
+	// Non-key messages an open overlay still needs (cursor blinks).
+	if m.overlay != nil {
+		cmd, _ := m.overlay.update(msg)
+		return m, cmd
 	}
 
 	// Everything unhandled scrolls the content viewport when it has focus.
@@ -310,6 +356,11 @@ func (m Model) View() string {
 		return "loading..."
 	}
 	main := lipgloss.JoinHorizontal(lipgloss.Top, m.renderDetailPane(), m.renderListPane())
+	if m.overlay != nil {
+		// The overlay replaces the main area, centered in the same band so
+		// the header and status line never shift.
+		main = lipgloss.Place(m.width, m.innerH()+2, lipgloss.Center, lipgloss.Center, m.overlay.view(m.styles))
+	}
 	return lipgloss.JoinVertical(lipgloss.Left, m.renderHeader(), main, m.renderStatus())
 }
 
@@ -326,14 +377,20 @@ func (m Model) renderHeader() string {
 	}
 	title := " anthill  " + strings.Join(tabs, "  ")
 
-	hints := "[tab] switch pane  [↑↓] move  [enter] open  [r] refresh"
-	if len(m.modes) > 1 {
-		hints += "  [m] mode"
+	var hints string
+	if m.overlay != nil {
+		// An open overlay swaps the whole hint string for its own keys.
+		hints = m.overlay.title + "  ·  [ctrl+s] submit  [esc] cancel"
+	} else {
+		hints = "[tab] switch pane  [↑↓] move  [enter] open  [r] refresh"
+		if len(m.modes) > 1 {
+			hints += "  [m] mode"
+		}
+		for _, act := range m.mode().Actions() {
+			hints += fmt.Sprintf("  [%s] %s", act.Key, act.Label)
+		}
+		hints += "  [q] quit"
 	}
-	for _, act := range m.mode().Actions() {
-		hints += fmt.Sprintf("  [%s] %s", act.Key, act.Label)
-	}
-	hints += "  [q] quit"
 	hintLine := m.styles.dim.Render(truncateCells(" "+hints, m.width))
 
 	return lipgloss.NewStyle().Width(m.width).Render(title + "\n" + hintLine)

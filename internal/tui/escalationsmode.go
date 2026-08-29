@@ -8,8 +8,9 @@ import (
 )
 
 // EscalationsMode is the escalations screen: every record in the escalation
-// directory, with the lifecycle actions of the escalation verbs. Answering
-// and raising need free-text input and stay on the scriptable verbs.
+// directory, with the lifecycle actions of the escalation verbs. Answering an
+// open record takes free text through the root's overlay; raising stays on
+// the scriptable `escalation raise` verb.
 type EscalationsMode struct {
 	store *escalation.Store
 	recs  []*escalation.Record
@@ -81,14 +82,25 @@ func (e *EscalationsMode) Detail(i int) string {
 	return sb.String()
 }
 
-// Actions implements Mode. Each Do maps 1:1 to an escalation verb's domain
-// transition; close and remove are confirm-gated as destructive.
+// Actions implements Mode. Each Do/DoInput maps 1:1 to an escalation verb's
+// domain transition; close and remove are confirm-gated as destructive.
+// Answer takes the [a] key as the primary act on an open record; apply sits
+// on its mnemonic [p].
 func (e *EscalationsMode) Actions() []Action {
 	return []Action{
-		{Key: "a", Label: "apply", Do: e.apply},
+		{Key: "a", Label: "answer", Input: true, DoInput: e.answer},
+		{Key: "p", Label: "apply", Do: e.apply},
 		{Key: "x", Label: "close", Confirm: true, Do: e.close},
 		{Key: "X", Label: "remove", Confirm: true, Do: e.remove},
 	}
+}
+
+func (e *EscalationsMode) answer(i int, text string) (string, error) {
+	r, err := e.store.Answer(e.recs[i].ID, text)
+	if err != nil {
+		return "", err
+	}
+	return "answered " + r.ID, nil
 }
 
 func (e *EscalationsMode) apply(i int) (string, error) {

@@ -101,21 +101,51 @@ func TestEscalationsModeDetail(t *testing.T) {
 func TestEscalationsModeActionKeys(t *testing.T) {
 	e := NewEscalationsMode(nil)
 	acts := e.Actions()
-	if len(acts) != 3 {
-		t.Fatalf("actions = %d, want 3", len(acts))
+	if len(acts) != 4 {
+		t.Fatalf("actions = %d, want 4", len(acts))
 	}
 	for _, tc := range []struct {
 		key, label string
 		confirm    bool
+		input      bool
 	}{
-		{"a", "apply", false},
-		{"x", "close", true},
-		{"X", "remove", true},
+		{"a", "answer", false, true},
+		{"p", "apply", false, false},
+		{"x", "close", true, false},
+		{"X", "remove", true, false},
 	} {
 		a := escAction(t, e, tc.key)
-		if a.Label != tc.label || a.Confirm != tc.confirm {
-			t.Errorf("[%s] = %s confirm=%v, want %s confirm=%v", tc.key, a.Label, a.Confirm, tc.label, tc.confirm)
+		if a.Label != tc.label || a.Confirm != tc.confirm || a.Input != tc.input {
+			t.Errorf("[%s] = %s confirm=%v input=%v, want %s confirm=%v input=%v",
+				tc.key, a.Label, a.Confirm, a.Input, tc.label, tc.confirm, tc.input)
 		}
+	}
+}
+
+func TestEscalationsModeAnswer(t *testing.T) {
+	root := escalationFixtureRoot(t)
+	e := loadedEscalationsMode(t, root)
+	answer := escAction(t, e, "a")
+
+	// Answering an answered record is a precondition failure.
+	if _, err := answer.DoInput(escIndexOf(t, e, "2026-08-29-answered-q"), "again"); err == nil {
+		t.Error("answer on answered record: want error")
+	}
+
+	// Answering the open record lands the decision via the domain verb.
+	msg, err := answer.DoInput(escIndexOf(t, e, "2026-08-29-open-q"), "Yes, proceed.")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(msg, "answered 2026-08-29-open-q") {
+		t.Errorf("status = %q", msg)
+	}
+	r, err := escalation.NewStore(root).Find("2026-08-29-open-q")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Status != "answered" || r.Section("Decision") != "Yes, proceed." {
+		t.Errorf("record after answer: status=%q decision=%q", r.Status, r.Section("Decision"))
 	}
 }
 
@@ -124,10 +154,10 @@ func TestEscalationsModeApply(t *testing.T) {
 	e := loadedEscalationsMode(t, root)
 
 	// Applying an open record is a precondition failure.
-	if _, err := escAction(t, e, "a").Do(escIndexOf(t, e, "2026-08-29-open-q")); err == nil {
+	if _, err := escAction(t, e, "p").Do(escIndexOf(t, e, "2026-08-29-open-q")); err == nil {
 		t.Error("apply on open record: want error")
 	}
-	if _, err := escAction(t, e, "a").Do(escIndexOf(t, e, "2026-08-29-answered-q")); err != nil {
+	if _, err := escAction(t, e, "p").Do(escIndexOf(t, e, "2026-08-29-answered-q")); err != nil {
 		t.Fatal(err)
 	}
 	dir := filepath.Join(root, ".anthill", "escalations")
