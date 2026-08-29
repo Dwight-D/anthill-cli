@@ -2,6 +2,50 @@
 
 Release notes for the Anthill CLI. Newest first.
 
+## Unreleased
+
+### Added
+
+- **`anthill tui` — interactive full-screen browser** over the harness's
+  durable state (Bubble Tea + Lip Gloss). Layout: mode tabs and `[key] action`
+  hints in a top header, the selected record's frontmatter + body in a
+  scrollable left content pane, the record list in a right nav pane, and a
+  one-line status bar. `tab` switches pane focus; `↑↓` move; destructive
+  actions are y/n-confirm-gated in the status line.
+- **Switchable TUI modes.** The TUI is organised as top-level modes behind a
+  registry seam (`[m]` / number keys to switch). Two ship now:
+  - **Backlog** — browse items; `a` approve, `d` close done, `x` discard,
+    `X` remove. Actions map 1:1 to the backlog verbs and reload the list in
+    place, preserving selection.
+  - **Escalations** — browse records; `a` apply, `x` close, `X` remove.
+    Free-text answering/raising stays on the scriptable verbs for now.
+  The mode seam is documented in `docs/CLI_INTERFACE_SPEC.md` §5; adding a
+  mode is one struct plus one registry append.
+- **`escalation close <id> ["reason"]` and `escalation remove <id>
+  ["reason"]`.** An unanswered (stale) escalation can now be closed, and any
+  record removed, without going through `answer`/`apply`. Both write a LOG.md
+  audit line before deleting the record; the reason defaults to the record's
+  question. No frontmatter schema change.
+
+### Changed
+
+- **Bare `anthill` opens the TUI.** With no subcommand, an interactive
+  terminal inside an installation launches `anthill tui`; non-TTY invocations
+  and invocations outside any `.anthill` root print help with exit 0.
+  `--help`, `help`, `--version`, and unknown-command handling are unchanged.
+- Backlog approve/close transitions and sweep ordering moved from the command
+  layer into the `internal/backlog` domain package so the CLI and TUI share
+  one transition path. Command output and exit codes are unchanged.
+
+### Fixed
+
+- **`backlog close` disposition flags no longer swallow the item id.**
+  `--done`/`--discard`/`--remove`/`--block` were string flags requiring a
+  value, so `close <id> --remove` failed and `close --remove <id>` misread
+  the id as the reason. Dispositions are now pure boolean flags with the
+  reason as an optional second positional (`close <id> --discard ["reason"]`,
+  either argument order), with regression tests. Spec §3.7 updated to match.
+
 ## 0.0.6 — 2026-08-14
 
 ### Added
