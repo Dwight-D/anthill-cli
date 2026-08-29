@@ -5,11 +5,22 @@ import (
 	"io"
 	"os"
 
+	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 
 	"github.com/Dwight-D/anthill-cli/internal/bootstrap"
 	"github.com/Dwight-D/anthill-cli/internal/version"
 )
+
+// isInteractive reports whether stdin and stdout are both terminals. A seam
+// var so tests can force either branch of the bare-invocation default.
+var isInteractive = func() bool {
+	return isTerm(os.Stdin.Fd()) && isTerm(os.Stdout.Fd())
+}
+
+func isTerm(fd uintptr) bool {
+	return isatty.IsTerminal(fd) || isatty.IsCygwinTerminal(fd)
+}
 
 // NewRootCommand constructs the root "anthill" cobra command with all
 // subcommands wired to an App bound to the process stdio.
@@ -30,6 +41,16 @@ func newRootCommand(a *App) *cobra.Command {
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Bare `anthill` opens the TUI when a human is at a terminal and
+			// an installation is discoverable; otherwise fall back to help
+			// (exit 0) rather than hanging a headless caller. `--help`,
+			// `anthill help`, and unknown commands never reach this RunE and
+			// behave as before.
+			if isInteractive() {
+				if _, err := a.resolveRoot(); err == nil {
+					return a.launchTUI()
+				}
+			}
 			return cmd.Help()
 		},
 	}

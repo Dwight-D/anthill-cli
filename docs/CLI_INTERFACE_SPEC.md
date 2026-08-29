@@ -590,6 +590,13 @@ human-convenience layer: agents keep driving the scriptable verbs, and no TUI
 surface may perform a mutation that has no command-line equivalent — the TUI
 is a viewport onto the verbs, never a privileged path.
 
+**Bare invocation.** Running `anthill` with no subcommand also opens the TUI,
+provided both stdin and stdout are terminals and an `.anthill` root is
+discoverable; otherwise it prints the root help and exits 0, so a headless or
+misdirected caller is never left hanging on an interactive screen. `anthill
+--help`, `anthill help`, `--version`, and unknown-command errors are untouched
+by this default — they never reach the bare-invocation path.
+
 ### Modes
 
 The TUI is organised around top-level **modes** — switchable screens sharing

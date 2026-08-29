@@ -20,16 +20,29 @@ func (a *App) newTUICommand() *cobra.Command {
 			"actions confirm first). Requires an interactive terminal.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			root, err := a.resolveRoot()
-			if err != nil {
-				return err
-			}
-			p := tea.NewProgram(tui.New(root), tea.WithAltScreen())
-			if _, err := p.Run(); err != nil {
-				return internalErr(err.Error())
-			}
-			return nil
+			return a.launchTUI()
 		},
 	}
 	return cmd
+}
+
+// runTUIProgram builds and runs the Bubble Tea program over the installation
+// at root. A seam var so the root-command test can observe a launch without
+// driving a real terminal.
+var runTUIProgram = func(root string) error {
+	p := tea.NewProgram(tui.New(root), tea.WithAltScreen())
+	_, err := p.Run()
+	return err
+}
+
+// launchTUI resolves the root and runs the full-screen TUI.
+func (a *App) launchTUI() error {
+	root, err := a.resolveRoot()
+	if err != nil {
+		return err
+	}
+	if err := runTUIProgram(root); err != nil {
+		return internalErr(err.Error())
+	}
+	return nil
 }

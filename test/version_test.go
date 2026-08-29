@@ -31,6 +31,15 @@ func TestRootHelp(t *testing.T) {
 	wantContains(t, r.stdout+r.stderr, "anthill", "root help")
 }
 
+// TestBareInvocationHeadlessShowsHelp covers the bare `anthill` default (spec
+// §5): with no terminal attached (this suite pipes stdio), it must fall back
+// to help with exit 0 — never hang waiting on a TUI.
+func TestBareInvocationHeadlessShowsHelp(t *testing.T) {
+	r := run(t)
+	wantExit(t, r, 0)
+	wantContains(t, r.stdout+r.stderr, "Usage:", "bare headless invocation")
+}
+
 // TestUnknownCommandUsageExit covers exit code 2 for an unknown command
 // (spec §2: Cobra usage errors map to exit 2).
 func TestUnknownCommandUsageExit(t *testing.T) {
