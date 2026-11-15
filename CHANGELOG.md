@@ -4,6 +4,12 @@ Release notes for the Anthill CLI. Newest first.
 
 ## Unreleased
 
+### Added
+
+- **TUI: answer open escalations in place.** A free-text overlay in the
+  Escalations mode records the answer on the selected open escalation.
+- **TUI: word-wrapped detail pane.** Record content wraps to the pane width.
+
 ### Changed
 
 - **Re-embed the framework template at upstream ref `ae961d6`.** The pinned
