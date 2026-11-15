@@ -2,6 +2,18 @@
 
 Release notes for the Anthill CLI. Newest first.
 
+## Unreleased
+
+### Changed
+
+- **Re-embed the framework template at upstream ref `ae961d6`.** The pinned
+  template now carries the supervisor delegation gate: the `supervisor`
+  skill's frontmatter registers a `PreToolUse` prompt hook on
+  `Agent|SendMessage` that rejects briefs and messages handing a worker
+  unrelated tasks, and `.anthill/supervisor/brief-template.md` names one
+  task in `GOAL` and gains a `BATCH REASON` section. `anthill sync` re-copies
+  both files.
+
 ## 0.0.7 — 2026-08-29
 
 ### Added
