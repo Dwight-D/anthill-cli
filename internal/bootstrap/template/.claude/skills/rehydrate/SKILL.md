@@ -2,8 +2,8 @@
 name: rehydrate
 description: Snapshot a supervisor session's working state to durable files
   so a fresh session resumes it by invoking the supervisor skill. Use when
-  the user invokes /rehydrate, asks to recycle or hand off the supervisor
-  session, or the session's context is degrading.
+  the user invokes /rehydrate or asks to recycle or hand off the supervisor
+  session. User-initiated — never load uninvited.
 ---
 
 # rehydrate (supervisor handoff)

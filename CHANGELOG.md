@@ -2,6 +2,16 @@
 
 Release notes for the Anthill CLI. Newest first.
 
+## Unreleased
+
+### Changed
+
+- **Re-embed the framework template at upstream ref `40393e8`.** The pinned
+  `supervisor` skill carries the role-split and distilled-context delegation
+  rules and a 150k-token worker recycle threshold; `supervisor` and
+  `rehydrate` make recycling the supervisor session user-initiated.
+  `anthill sync` re-copies both skills.
+
 ## 0.0.8 — 2026-11-15
 
 ### Added

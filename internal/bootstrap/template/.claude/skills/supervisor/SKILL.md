@@ -100,7 +100,16 @@ teardown when possible.
    only then, and the brief's `BATCH REASON` says which of the two
    applies. Everything else gets its own fresh worker, including a new
    task that arrives while a worker is still running.
-4. Verify every skill/command name in a brief against bindings — workers
+4. Keep tasks small and self-contained. Split a change across separate
+   workers by role: one writes the implementation, another writes the
+   test cases or scenes and the test harness, a third runs the tests and
+   reports. When the tests exercise the implementation directly, the
+   implementer reports a summary of the API the tests need.
+5. For a large or complex task, first have a subagent write distilled
+   context — what in the code and documentation is relevant to the task,
+   in one file — and point the worker briefs at it, so workers do not
+   keep re-reading the same sources.
+6. Verify every skill/command name in a brief against bindings — workers
    inherit your mistakes.
 
 ### Delegation gate
@@ -129,8 +138,8 @@ a second task defeats the gate and breaks rule 3.
 
 - Worker cap per bindings (a derived value — re-derive if the
   environment changed).
-- Recycle early: heavy window → land state, tear down, spawn cold on the
-  next task.
+- Recycle early: a worker past 150k tokens lands state and is torn
+  down; spawn cold on the next task.
 - Brief workers to push large exploratory reads onto throwaway subagents
   that return conclusions only.
 
@@ -163,9 +172,11 @@ as files with one-line captions. If staying silent, stay silent.
 `agenda.md` holds user intent only — goals, directives, priorities,
 constraints. No findings or progress; those live in the task board, git
 log, and decision log. Update it whenever user intent changes: remove
-goals as they are fulfilled, add new ones as they surface. On context
-degradation, run the `rehydrate` skill — land worker state, snapshot the
-board to `.anthill/supervisor/board.md`, end. A successor bootstraps
+goals as they are fulfilled, add new ones as they surface. The user
+decides when the session is recycled: when context fills up, the user
+runs the `rehydrate` skill — land worker state and preserve mission
+state by snapshotting the board to `.anthill/supervisor/board.md`. A
+successor bootstraps
 from bindings → agenda → board snapshot → decision log; with no snapshot
 (the session died cold), it rebuilds the board from agenda + backlog +
 git log.
