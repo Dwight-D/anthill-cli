@@ -2,7 +2,7 @@
 
 Release notes for the Anthill CLI. Newest first.
 
-## Unreleased
+## 0.0.8 — 2026-11-15
 
 ### Added
 
@@ -20,24 +20,24 @@ Release notes for the Anthill CLI. Newest first.
   task in `GOAL` and gains a `BATCH REASON` section. `anthill sync` re-copies
   both files.
 
-## 0.0.7 — 2026-08-29
+## 0.0.7 â€” 2026-08-29
 
 ### Added
 
-- **`anthill tui` â€” interactive full-screen browser** over the harness's
+- **`anthill tui` Ã¢â‚¬â€ interactive full-screen browser** over the harness's
   durable state (Bubble Tea + Lip Gloss). Layout: mode tabs and `[key] action`
   hints in a top header, the selected record's frontmatter + body in a
   scrollable left content pane, the record list in a right nav pane, and a
-  one-line status bar. `tab` switches pane focus; `â†‘â†“` move; destructive
+  one-line status bar. `tab` switches pane focus; `Ã¢â€ â€˜Ã¢â€ â€œ` move; destructive
   actions are y/n-confirm-gated in the status line.
 - **Switchable TUI modes.** The TUI is organised as top-level modes behind a
   registry seam (`[m]` / number keys to switch). Two ship now:
-  - **Backlog** â€” browse items; `a` approve, `d` close done, `x` discard,
+  - **Backlog** Ã¢â‚¬â€ browse items; `a` approve, `d` close done, `x` discard,
     `X` remove. Actions map 1:1 to the backlog verbs and reload the list in
     place, preserving selection.
-  - **Escalations** â€” browse records; `a` apply, `x` close, `X` remove.
+  - **Escalations** Ã¢â‚¬â€ browse records; `a` apply, `x` close, `X` remove.
     Free-text answering/raising stays on the scriptable verbs for now.
-  The mode seam is documented in `docs/CLI_INTERFACE_SPEC.md` Â§5; adding a
+  The mode seam is documented in `docs/CLI_INTERFACE_SPEC.md` Ã‚Â§5; adding a
   mode is one struct plus one registry append.
 - **`escalation close <id> ["reason"]` and `escalation remove <id>
   ["reason"]`.** An unanswered (stale) escalation can now be closed, and any
@@ -62,16 +62,16 @@ Release notes for the Anthill CLI. Newest first.
   value, so `close <id> --remove` failed and `close --remove <id>` misread
   the id as the reason. Dispositions are now pure boolean flags with the
   reason as an optional second positional (`close <id> --discard ["reason"]`,
-  either argument order), with regression tests. Spec Â§3.7 updated to match.
+  either argument order), with regression tests. Spec Ã‚Â§3.7 updated to match.
 
-## 0.0.6 â€” 2026-08-14
+## 0.0.6 Ã¢â‚¬â€ 2026-08-14
 
 ### Added
 
 - **Re-embed the framework template at upstream ref `17a0ea2`.** The pinned
   template now carries:
   - the new `rehydrate` general-tier skill (supervisor session handoff via a
-    task-board snapshot at `.anthill/supervisor/board.md`) Ã¢â‚¬â€ general-tier
+    task-board snapshot at `.anthill/supervisor/board.md`) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â general-tier
     skill count is now **twelve**;
   - the rewritten `wake-up`, `supervisor`, and `dispatch-loop` skills
     (concision pass; yield-by-cause rule; no-destructive-orphan-recovery;
@@ -86,7 +86,7 @@ Release notes for the Anthill CLI. Newest first.
 
   Payload files are normalized to LF line endings.
 
-## 0.0.5 Ã¢â‚¬â€ 2026-07-21
+## 0.0.5 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 2026-07-21
 
 ### Changed
 
@@ -103,7 +103,7 @@ Release notes for the Anthill CLI. Newest first.
   skills, `sync` now reconciles the **framework-invariant** non-skill files (the
   `.anthill/` reference READMEs, the supervisor brief template, and the `tools/`
   launchers) byte-identical to the embedded template. It also **creates any
-  payload file absent from the install** (`created` in `--json`) Ã¢â‚¬â€ a
+  payload file absent from the install** (`created` in `--json`) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â a
   non-destructive write that carries new upstream scaffold files and whole
   subtrees (e.g. a newly added `.anthill/` mechanism or required structural dir)
   to a sync-upgraded install without a re-scaffold. Existing project-derived
@@ -116,7 +116,7 @@ Release notes for the Anthill CLI. Newest first.
 
 - **Re-embed the framework template at upstream ref `8fa21a2`.** The pinned
   template now carries:
-  - the new `sync` general-tier skill Ã¢â‚¬â€ general-tier skill count is now
+  - the new `sync` general-tier skill ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â general-tier skill count is now
     **eleven**;
   - the updated `dispatch-loop`, `supervisor`, and `wake-up` skills;
   - the new `.anthill/dispatch/` subtree (`README.md`, plus the seed-on-first-use
@@ -125,14 +125,14 @@ Release notes for the Anthill CLI. Newest first.
     and the `.anthill/dispatch/` tree; `doctor`'s structure check requires the
     `.anthill/dispatch/` directory.
 
-## 0.0.4 Ã¢â‚¬â€ 2026-07-20
+## 0.0.4 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â 2026-07-20
 
 ### Changed
 
 - **Retire the `autonomous` skill's adaptation-region handling in `doctor` and
   `sync`.** The general tier is now byte-identical to upstream with no
   exceptions. `doctor` Section A checks every installed `.claude/skills/*` file
-  byte-for-byte Ã¢â‚¬â€ the previous carve-out that exempted the `autonomous`
+  byte-for-byte ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the previous carve-out that exempted the `autonomous`
   proceed-list and decisions-log path is gone. `sync` is a plain verbatim
   re-copy: a changed skill is overwritten, and the only conflict class is a
   skill with an unexpected local edit (reported and left unchanged at exit 3
@@ -143,7 +143,7 @@ Release notes for the Anthill CLI. Newest first.
 
 - **Re-embed the framework template at upstream ref `3797138`.** The pinned
   template now carries:
-  - the new `submit` general-tier skill Ã¢â‚¬â€ general-tier skill count is now
+  - the new `submit` general-tier skill ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â general-tier skill count is now
     **ten**;
   - the refactored `autonomous` skill, which loads its project inputs from
     `.anthill/autonomy.md` at invocation instead of holding in-place adaptation
@@ -155,7 +155,7 @@ Release notes for the Anthill CLI. Newest first.
   `.anthill/` file until the consumer fills it in, like other config
   placeholders.
 
-### Migration Ã¢â‚¬â€ existing installs
+### Migration ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â existing installs
 
 On the first `anthill sync` after this CLI adopts the new ref, an install's
 locally-derived `autonomous` skill (its old proceed-list) reconciles against the
@@ -166,7 +166,7 @@ refactored upstream skill:
    (derive it from the scaffolded placeholder).
 2. Run `anthill sync` to add the `submit` skill and re-copy the `autonomous`
    skill verbatim. If your install already reports as current, the skill shows
-   as an unexpected local edit Ã¢â‚¬â€ re-run with `--force` to overwrite it.
+   as an unexpected local edit ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â re-run with `--force` to overwrite it.
 
 This is a relocation of configuration, not data loss: the proceed-list now lives
 in the specific tier where it is upgrade-safe.
