@@ -2,7 +2,7 @@
 
 Release notes for the Anthill CLI. Newest first.
 
-## Unreleased
+## 0.0.10 — 2026-11-16
 
 ### Changed
 
