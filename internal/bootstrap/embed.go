@@ -12,9 +12,9 @@ import (
 // TemplateRef is the upstream framework-home commit the embedded template
 // payload was vendored from. Stamped into a fresh install's
 // .anthill/framework.md synced-through by `scaffold`, and compared by `sync`
-// and `doctor`. CI re-vendors template/ and updates this on each tagged CLI
-// release.
-const TemplateRef = "40393e8a950a41460c2dd6555a0803d3c76ed4f5"
+// and `doctor`. tools/vendor.ps1 re-vendors template/ and updates this before
+// a tagged CLI release.
+const TemplateRef = "dec42bb5368914380fc57f7c48f1989baa879430"
 
 // TemplateRepo is the upstream framework home the payload is vendored from.
 const TemplateRepo = "https://github.com/Dwight-D/anthill"

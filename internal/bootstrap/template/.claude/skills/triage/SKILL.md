@@ -53,5 +53,4 @@ Finish a pass with the validation command from bindings (when available).
 
 - **Propose only — never implement.** Building the change is `dispatch`.
 - Never-auto change types are hard caps, not suggestions.
-- Deep product knowledge lives with the dispatch routes (e.g. node work →
-  `create-node`); triage only classifies.
+- Deep product knowledge lives with the dispatch routes; triage only classifies.

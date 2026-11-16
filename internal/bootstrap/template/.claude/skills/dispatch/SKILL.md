@@ -12,13 +12,12 @@ description: Send ONE backlog item to a fresh worker and shepherd it to
 
 Read `.anthill/backlog/workstreams.md` (routes, evidence rules, sweep
 order) and `.anthill/backlog/bindings.md` (schema-owner commands, claim
-semantics) on invocation; missing → the project isn't onboarded, derive
-them with the user first.
+semantics) on invocation.
 
 Running dispatch **is** the authorization to implement what it selects;
 the backlog is otherwise propose-only. **Queue state belongs to you, the
 sender**: you claim, close, block, and persist escalations. The worker
-never touches the queue — that split is what makes workers disposable.
+never touches the queue.
 
 ## 1. Select
 

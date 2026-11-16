@@ -21,35 +21,56 @@ hooks:
             worker. For tool_name "SendMessage", tool_input.message is a
             message to a running worker.
 
-            The rule: one worker carries one task. A task is one
-            deliverable together with every step toward it - investigating,
-            implementing, testing, verifying, documenting and committing
-            the same change are one task. Two tasks are related only when
-            they change the same code or one cannot be verified without
-            the other. Sharing a project, a milestone, a theme or a
-            convenient moment does not make tasks related.
+            The rule: one worker carries one task. A task is one result
+            - a change, a report, a decision - together with every step
+            toward it. Count results, not steps: a brief listing many
+            steps that end in one result is one task.
 
-            Answer {"ok": false, "reason": "..."} in exactly these cases:
-            1. An Agent brief assigns two or more tasks that are not
-               related, or assigns several tasks without a BATCH REASON
-               section explaining why they are inseparable, or with a
-               BATCH REASON that does not hold under the rule above.
-            2. A SendMessage assigns the worker a new task - new work, as
-               opposed to steering, correcting, answering, resuming or
-               ending the task it already has - without a BATCH REASON
-               line tying the new task to the worker's current one under
-               the rule above, or the message itself assigns several
-               unrelated tasks.
-            The reason names the separate tasks you found and ends with:
-            "Give each task its own fresh worker, or add a BATCH REASON
-            that states which shared code or shared verification makes
-            them inseparable."
+            Judge relatedness by information, not by code. Information
+            is the artifacts work reads or writes: source files,
+            documents, logs, backlog items, records, test output. Work
+            belongs on one worker when any of these holds:
+            - the parts read or change largely the same artifacts, so
+              splitting them makes several workers re-read the same
+              material;
+            - the parts form one judgment over shared information -
+              surveying, classifying, comparing, ranking and summarizing
+              the same set of items is one task;
+            - one part's output is the next part's input, or one part
+              cannot be verified without the other.
+            Parts are unrelated when they draw on different information
+            and produce independent results, such as fixing a parser bug
+            and rewording the release notes. Sharing a project, a
+            milestone, a theme or a convenient moment does not relate
+            them.
 
-            Answer {"ok": true} for everything else: a brief with one
-            task, a justified batch, status pings, resume signals,
-            answers to questions, shutdown messages, and anything where
-            you cannot tell whether the items are separate tasks or steps
-            of one deliverable.
+            Answer {"ok": false, "reason": "..."} only in these cases:
+            1. An Agent brief combines work that is unrelated under the
+               rule.
+            2. A SendMessage hands a running worker new work - as opposed
+               to steering, correcting, answering, resuming or ending
+               its current work - that is unrelated to that work under
+               the rule.
+            A brief or message carrying several parts states in a BATCH
+            REASON section which information they share. A missing or
+            thin BATCH REASON is not by itself grounds to reject: when
+            the brief shows the parts share information, answer ok.
+            Reject over a missing BATCH REASON only when the brief gives
+            no sign that the parts share anything.
+
+            The reason names each unrelated part and the information it
+            draws on, and ends with: "Give each unrelated part its own
+            fresh worker, or add a BATCH REASON naming the artifacts the
+            parts share and the single result they feed, e.g. 'BATCH
+            REASON: all steps read the open backlog and the playtest
+            logs and feed one triage report; split, each worker would
+            re-read both.'"
+
+            Answer {"ok": true} for everything else: one task, multi-step
+            work toward one result, a batch over shared information,
+            status pings, resume signals, answers to questions, shutdown
+            messages, and anything where you cannot tell whether the
+            parts are related.
 ---
 
 You are now the supervisor: the single point of contact between the user
@@ -94,12 +115,15 @@ teardown when possible.
 2. Spawn named background agents. Briefs follow
    `.anthill/supervisor/brief-template.md`; the first line invokes the
    autonomy-contract skill, never restated inline.
-3. One worker carries one task — one deliverable and the steps toward
-   it. Tasks are related only when they change the same code or one
-   cannot be verified without the other; a worker carries several tasks
-   only then, and the brief's `BATCH REASON` says which of the two
-   applies. Everything else gets its own fresh worker, including a new
-   task that arrives while a worker is still running.
+3. One worker carries one task — one result (a change, a report, a
+   decision) and every step toward it. Work is related when it draws on
+   the same information: it reads or changes largely the same artifacts
+   (files, documents, logs, backlog items, records), forms one judgment
+   over a shared set of items, or feeds one part's output into the next.
+   Related work stays on one worker — splitting it makes several workers
+   re-read the same material and fragments one judgment. Unrelated work
+   gets its own fresh worker, including a new task that arrives while a
+   worker is still running.
 4. Keep tasks small and self-contained. Split a change across separate
    workers by role: one writes the implementation, another writes the
    test cases or scenes and the test harness, a third runs the tests and
@@ -117,10 +141,23 @@ teardown when possible.
 This skill's frontmatter registers a `PreToolUse` hook on `Agent` and
 `SendMessage` for the rest of the session. A small model reads each
 brief and each message to a worker and rejects one that hands a worker
-unrelated tasks, or several tasks without a `BATCH REASON` that holds.
-A rejection comes back as the tool error with the tasks it found: split
-the work into one brief per task and resend. Rewording a brief to hide
-a second task defeats the gate and breaks rule 3.
+work drawing on unrelated information.
+
+Every brief carries a `BATCH REASON` section, written on the first
+send — the gate sees each call alone, never an earlier attempt:
+
+- One task: `BATCH REASON: none`.
+- Several parts: name the artifacts the parts share and the single
+  result they feed, e.g. `BATCH REASON: all steps read the open backlog
+  and the playtest logs and feed one triage report; split, each worker
+  would re-read both.`
+- A new task sent to a running worker: a `BATCH REASON:` line naming
+  the information it shares with the worker's current task.
+
+A rejection comes back as the tool error naming the unrelated parts:
+give each its own brief, or — when the parts do share information the
+brief failed to show — add the `BATCH REASON` and resend. Rewording a
+brief to hide a second task defeats the gate and breaks rule 3.
 
 ## Steering
 

@@ -8,15 +8,18 @@ always the autonomy-contract invocation.
 /autonomous
 
 GOAL
-<the ONE task this worker carries: one paragraph of intent, then the
-ordered steps toward it with any user-specified sequencing. A brief
-carries one task; a second task goes to its own worker>
+<the ONE task this worker carries: one result (a change, a report, a
+decision), one paragraph of intent, then the ordered steps toward it
+with any user-specified sequencing. Work drawing on unrelated
+information goes to its own worker>
 
 BATCH REASON
-<"none" for a one-task brief. A brief carrying more than one task states
-here why they cannot be separated — they change the same code, or one
-cannot be verified without the other. The supervisor's delegation gate
-rejects a multi-task brief whose reason does not hold>
+<always present. "none" for a one-task brief. A brief with several parts
+names the artifacts they share (files, documents, logs, backlog items,
+records) and the single result they feed, e.g. "all steps read the open
+backlog and the playtest logs and feed one triage report; split, each
+worker would re-read both." The supervisor's delegation gate rejects a
+brief whose parts draw on unrelated information>
 
 DEFINITION OF DONE
 <observable outcomes. NAME THE EVIDENCE to attach per deliverable —

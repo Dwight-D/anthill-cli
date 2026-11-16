@@ -5,7 +5,8 @@
 #
 # Preflight refuses: dirty tree, not on main, behind origin/main, tag taken.
 # Warns (but proceeds) if the embedded template ref differs from the sibling
-# anthill-fw checkout's HEAD - re-vendor first if that is unintended.
+# anthill-fw checkout's HEAD - re-vendor first (tools/vendor.ps1) if that is
+# unintended.
 param(
     [Parameter(Mandatory = $true)]
     [ValidatePattern('^\d+\.\d+\.\d+$')]
@@ -56,14 +57,14 @@ finally { Pop-Location }
 # --- Bump version constant ---
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $verFile = Join-Path $repo 'internal\version\version.go'
-$src = Get-Content $verFile -Raw
+$src = [System.IO.File]::ReadAllText($verFile, $utf8)
 $new = $src -replace 'const Version = "[^"]+"', ('const Version = "{0}"' -f $Version)
 if ($new -eq $src) { Fail "version constant not found in version.go" }
 [System.IO.File]::WriteAllText($verFile, $new, $utf8)
 
 # --- Date the changelog (Unreleased -> version + date, em-dash house style) ---
 $clFile = Join-Path $repo 'CHANGELOG.md'
-$cl = Get-Content $clFile -Raw
+$cl = [System.IO.File]::ReadAllText($clFile, $utf8)
 if ($cl -match '## Unreleased') {
     $emdash = [char]0x2014
     $today = Get-Date -Format 'yyyy-MM-dd'
