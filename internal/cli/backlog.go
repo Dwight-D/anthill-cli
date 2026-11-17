@@ -340,6 +340,7 @@ func (a *App) newBacklogClaim() *cobra.Command {
 			if err != nil {
 				return wrapStoreErr(err)
 			}
+			a.ledgerClaim(store.Root(), claimed)
 			if a.json {
 				return a.emitJSON(viewItem(claimed, true))
 			}
@@ -388,6 +389,7 @@ func (a *App) newBacklogDeliver() *cobra.Command {
 			if err := store.Deliver(it, by, text, force); err != nil {
 				return wrapStoreErr(err)
 			}
+			a.ledgerTouch(store.Root(), it.ID, it.Session, "deliver")
 			return a.emitTransition(it, "delivered %s (validation)", it.ID)
 		},
 	}
@@ -414,6 +416,7 @@ func (a *App) newBacklogBlock() *cobra.Command {
 			if err := store.Block(it, args[1], ""); err != nil {
 				return wrapStoreErr(err)
 			}
+			a.ledgerTouch(store.Root(), it.ID, it.Session, "block")
 			return a.emitTransition(it, "blocked %s: %s", it.ID, args[1])
 		},
 	}
@@ -450,9 +453,11 @@ func (a *App) newBacklogRelease() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			sid := it.Session
 			if err := store.Release(it, ""); err != nil {
 				return wrapStoreErr(err)
 			}
+			a.ledgerTouch(store.Root(), it.ID, sid, "release")
 			return a.emitTransition(it, "released %s", it.ID)
 		},
 	}
@@ -591,10 +596,12 @@ func (a *App) newBacklogClose() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			sid := it.Session
 			changelog, err := store.Close(it, mode, reason, "", force)
 			if err != nil {
 				return wrapStoreErr(err)
 			}
+			a.ledgerTouch(store.Root(), id, sid, "close")
 			if a.json {
 				return a.emitJSON(map[string]any{
 					"id": id, "mode": mode, "status": it.Status, "changelog": changelog,

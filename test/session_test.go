@@ -208,3 +208,73 @@ func TestSessionPrune(t *testing.T) {
 
 	wantExit(t, runIn(t, root, "session", "prune", "--older-than", "soon"), 2)
 }
+
+// TestClaimWritesLedgerFromEnv covers deliverable: claim records the ledger
+// itself when CLAUDE_CODE_SESSION_ID is set, with no hook installed.
+func TestClaimWritesLedgerFromEnv(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "env-claim", readyFields("Env claim", "cli"), "body")
+	r := runEnv(t, root, []string{"ANTHILL_ACTOR=cli-worker", "CLAUDE_CODE_SESSION_ID=sess-env-1"},
+		"backlog", "claim", "env-claim")
+	wantExit(t, r, 0)
+	rec := readRecord(t, root, "sess-env-1")
+	if rec["session"] != "sess-env-1" || rec["item"] != "env-claim" || rec["handle"] != "cli-worker" || rec["agent"] != "" {
+		t.Fatalf("ledger record = %v", rec)
+	}
+	if rec["last-seen"] == nil || rec["last-seen"] == "" {
+		t.Fatalf("ledger record lacks last-seen: %v", rec)
+	}
+	// Backlog --json views are unchanged: no ledger fields leak into them.
+	r = runIn(t, root, "--json", "backlog", "show", "env-claim")
+	wantExit(t, r, 0)
+	if _, ok := jsonObj(t, r.stdout)["last-seen"]; ok {
+		t.Error("backlog show --json must not carry ledger fields")
+	}
+}
+
+func TestClaimWritesLedgerFromFlag(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "flag-claim", readyFields("Flag claim", "cli"), "body")
+	wantExit(t, runIn(t, root, "backlog", "claim", "flag-claim", "--session", "sess-flag"), 0)
+	if rec := readRecord(t, root, "sess-flag"); rec["item"] != "flag-claim" {
+		t.Fatalf("ledger record = %v", rec)
+	}
+}
+
+func TestClaimNoSessionNoLedger(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "plain-claim", readyFields("Plain claim", "cli"), "body")
+	wantExit(t, runIn(t, root, "backlog", "claim", "plain-claim"), 0)
+	if fileExists(t, sessionsDir(root)) {
+		t.Fatal("claim with no known session must not create the ledger")
+	}
+}
+
+// TestDeliverTouchesLedger covers deliver bumping the claimant session's record.
+func TestDeliverTouchesLedger(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "deliver-me", readyFields("Deliver me", "cli"), "body")
+	env := []string{"ANTHILL_ACTOR=cli-worker", "CLAUDE_CODE_SESSION_ID=sess-d"}
+	wantExit(t, runEnv(t, root, env, "backlog", "claim", "deliver-me"), 0)
+
+	rec := readRecord(t, root, "sess-d")
+	rec["last-seen"] = "2020-01-01T00:00:00Z"
+	writeRecord(t, root, "sess-d", rec)
+
+	wantExit(t, runEnv(t, root, env, "backlog", "deliver", "deliver-me", "--evidence", "go test ok"), 0)
+	rec = readRecord(t, root, "sess-d")
+	if rec["last-seen"] == "2020-01-01T00:00:00Z" {
+		t.Fatal("deliver must bump the ledger record's last-seen")
+	}
+	if rec["verb"] != "deliver" {
+		t.Errorf("verb = %v, want deliver", rec["verb"])
+	}
+
+	// No record for the session: deliver still succeeds and writes nothing.
+	root2 := mkTree(t)
+	writeItem(t, root2, "cli", "no-ledger", claimedFields("No ledger", "cli"), "body")
+	wantExit(t, runEnv(t, root2, []string{"ANTHILL_ACTOR=worker-a"}, "backlog", "deliver", "no-ledger", "--evidence", "ok"), 0)
+	if fileExists(t, sessionsDir(root2)) {
+		t.Fatal("deliver without a record must not create the ledger")
+	}
+}
