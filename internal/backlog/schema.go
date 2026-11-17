@@ -245,6 +245,12 @@ func (s *Store) maxNumber() (int, error) {
 
 // numberTaken reports whether any item directory holds a file numbered n.
 func (s *Store) numberTaken(n int) (bool, error) {
+	return s.numberTakenElsewhere(n, "")
+}
+
+// numberTakenElsewhere reports whether any item directory holds a file
+// numbered n other than the file at except (empty: no exception).
+func (s *Store) numberTakenElsewhere(n int, except string) (bool, error) {
 	dirs, err := s.itemDirs(true)
 	if err != nil {
 		return false, err
@@ -258,7 +264,7 @@ func (s *Store) numberTaken(n int) (bool, error) {
 			return false, err
 		}
 		for _, e := range entries {
-			if m, ok := ParseFilename(e.Name()); ok && m == n {
+			if m, ok := ParseFilename(e.Name()); ok && m == n && filepath.Join(d, e.Name()) != except {
 				return true, nil
 			}
 		}

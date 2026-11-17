@@ -100,7 +100,7 @@ func ParseRef(input, prefix string) (Ref, error) {
 		return Ref{Key: k}, nil
 	}
 	in := strings.TrimSpace(input)
-	if formerRe.MatchString(in) && !strings.Contains(in, "..") {
+	if formerRe.MatchString(in) && strings.Trim(in, "0123456789") != "" {
 		return Ref{Former: in}, nil
 	}
 	return Ref{}, invalidID(input)

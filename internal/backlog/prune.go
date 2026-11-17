@@ -42,7 +42,7 @@ func (s *Store) Prune(olderThan time.Duration, dryRun bool) (*PruneResult, error
 		if dryRun {
 			continue
 		}
-		if err := os.Remove(it.Path); err != nil {
+		if err := s.Delete(it); err != nil {
 			return nil, err
 		}
 		if err := s.AppendChangelog(it.ID, "purged", "discarded item pruned"); err != nil {

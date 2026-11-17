@@ -2,7 +2,6 @@ package backlog
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 
@@ -377,7 +376,7 @@ func (s *Store) Close(it *Item, mode, reason, by string, force bool) (bool, erro
 		}
 		return true, s.AppendChangelog(it.ID, "discarded", logText)
 	case CloseRemove:
-		if err := os.Remove(it.Path); err != nil {
+		if err := s.Delete(it); err != nil {
 			return false, err
 		}
 		return true, s.AppendChangelog(it.ID, "removed", logText)

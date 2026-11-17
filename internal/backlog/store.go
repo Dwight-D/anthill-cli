@@ -452,6 +452,19 @@ func (s *Store) New(p NewParams) (*Item, error) {
 			os.Remove(path)
 			return nil, werr
 		}
+		// A concurrent new with another title creates a different filename
+		// under the same number; the exclusive create cannot see it. Any other
+		// NNNN-*.md with this number means a lost race: give the file back and
+		// retry (every loser retries, so the first creator always keeps its
+		// number).
+		if other, err := s.numberTakenElsewhere(n, path); err != nil {
+			os.Remove(path)
+			return nil, err
+		} else if other {
+			os.Remove(path)
+			time.Sleep(time.Duration(5+attempt*3) * time.Millisecond)
+			continue
+		}
 		it.ID = Key{Prefix: prefix, Number: n}.String()
 		it.Number = n
 		it.Path = path
@@ -483,7 +496,7 @@ func (s *Store) prepareForAllocation() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if n > 0 || v != 0 {
+		if n > 0 {
 			return "", ErrNeedsMigration
 		}
 		if prefix == "" {
@@ -588,8 +601,14 @@ func (s *Store) RenameForTitle(it *Item, by string) (bool, error) {
 	return true, nil
 }
 
-// Delete removes an item file (terminal close).
+// Delete removes an item file (terminal close). The freed number is recorded
+// in `sequence` first so it is never reused (ITEM_KEYS_SPEC.md §2.1).
 func (s *Store) Delete(it *Item) error {
+	if it.Number > 0 {
+		if err := s.bumpSequence(it.Number); err != nil {
+			s.warnf("warning: sequence file not updated: %v", err)
+		}
+	}
 	return os.Remove(it.Path)
 }
 
