@@ -2,7 +2,7 @@
 
 Release notes for the Anthill CLI. Newest first.
 
-## Unreleased
+## 0.2.0 — 2026-11-17
 
 ### Changed — embedded template re-vendored at anthill-fw `bd91df4`
 
