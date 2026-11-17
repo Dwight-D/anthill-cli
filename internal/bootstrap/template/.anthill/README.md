@@ -30,7 +30,7 @@ Every file here is one of two classes:
     scratchpad/        # runtime — gitignored investigation reasoning traces
   backlog/
     workstreams.md     # config  — workstream defs + triage profiles + sweep order
-    bindings.md        # config  — schema, lifecycle, commands, id scheme, posture
+    bindings.md        # config  — schema, lifecycle, commands, key scheme, posture
     README.md          # config  — how to submit (intake)
     intake/            # runtime — untriaged, workstream-less items
     product/ dev/ process/ bugs/   # runtime — triaged and live items per workstream

@@ -111,15 +111,16 @@ teardown when possible.
 
 1. Create one shared task per mission before spawning, with a
    self-contained description (goal, pointers, deliverables, definition
-   of done). Each task names its backlog item — the id it implements, or
-   `none` with a one-line reason — and the board row carries that id.
+   of done). Each task names its backlog item — the key it implements
+   (`ANT-74`), or `none` with a one-line reason — and the board row
+   carries that key.
    File one (`submit`, `--reporter supervisor`) if the work will outlive
    this session.
 2. Spawn named background agents. Briefs follow
    `.anthill/supervisor/brief-template.md`; the first line invokes the
    autonomy-contract skill, never restated inline. A brief with an item
-   id instructs the worker to `anthill backlog claim <id> --by <agent-name>`
-   on pickup and `anthill backlog deliver <id> --by <agent-name> --evidence "…"`
+   key instructs the worker to `anthill backlog claim <key> --by <agent-name>`
+   on pickup and `anthill backlog deliver <key> --by <agent-name> --evidence "…"`
    on finish. An item that is not ready (not approved, or not `auto`)
    gets `--force` on the claim only when the user's mission is the
    greenlight for it.
@@ -172,12 +173,12 @@ brief to hide a second task defeats the gate and breaks rule 3.
 You are the controller of every item your workers hold: you close,
 approve (only on the user's word), and release; a worker may only advance
 the item it holds (claim on pickup, deliver, block). When a worker
-reports a delivered item, read it with `anthill backlog show <id>` and
+reports a delivered item, read it with `anthill backlog show <key>` and
 verify its `## Evidence` against `## Acceptance` and `verify`, then
-`anthill backlog close <id> --done "<one line>"`, or
-`anthill backlog close <id> --reject "<what is missing>"` and steer the
-worker. A worker torn down mid-item → `anthill backlog release <id>` when
-nothing landed, else `anthill backlog block <id> "<reason>"`.
+`anthill backlog close <key> --done "<one line>"`, or
+`anthill backlog close <key> --reject "<what is missing>"` and steer the
+worker. A worker torn down mid-item → `anthill backlog release <key>` when
+nothing landed, else `anthill backlog block <key> "<reason>"`.
 
 ## Steering
 

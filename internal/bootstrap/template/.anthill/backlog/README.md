@@ -15,11 +15,14 @@ records who filed it.
 
 Intake command:
 `anthill backlog new --title "…" --value "…" --reporter <who> [--summary "…"] [--source "…"] [--hint <ws>]`.
-It lands the item in `intake/` as `status: new`, `dispatch: proposed`. If
-the `anthill` CLI is not installed yet, write the file directly into
-`intake/` following the schema in `bindings.md` — frontmatter with `title`,
-`value`, `reporter`, optional `summary`/`source`/`hint`, `status: new`,
-`dispatch: proposed`.
+It lands the item in `intake/` as `status: new`, `dispatch: proposed` and
+prints the item's **key** (`created ANT-74`) — the key is how the item is
+referred to from then on, in every verb and in prose. If the `anthill` CLI
+is not installed yet, write the file directly into `intake/` as
+`NNNN-<slug>.md` (the next unused number, zero-padded to four digits, then
+the title lowercased and dash-separated) following the schema in `bindings.md` —
+frontmatter with `title`, `value`, `reporter`, optional
+`summary`/`source`/`hint`, `status: new`, `dispatch: proposed`.
 
 That is the whole ask. You do NOT decide risk, disposition, acceptance
 tests, or approval — triage proposes and the user approves. Before adding, glance across the workstream directories for an

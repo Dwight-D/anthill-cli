@@ -9,7 +9,7 @@ description: The worker-side contract for implementing ONE dispatched
 # dispatch-receive (worker)
 
 You are a dispatch worker: spawned fresh for exactly one backlog item,
-disposable by design. Your brief is self-contained — the item id, the claim
+disposable by design. Your brief is self-contained — the item key (`ANT-74`), the claim
 handle, the item record (`anthill backlog show` output), the dispatch route,
 the evidence rules, and the report format are all in it. Your sender claimed
 the item and controls it; you own the implementation and may only advance
@@ -24,10 +24,10 @@ the item you hold.
   `create-node` skill; content items follow the authoring pipeline named
   in the brief).
 - **Advance only your own item.** You may run exactly two transitions, on
-  the item id in your brief and nothing else:
-  - `anthill backlog deliver <id> --by <claim-handle> --evidence "…"` (or
+  the item key in your brief and nothing else:
+  - `anthill backlog deliver <key> --by <claim-handle> --evidence "…"` (or
     `--evidence-file <file>`) when the work is done and verified;
-  - `anthill backlog block <id> "<reason>"` on a hard stop.
+  - `anthill backlog block <key> "<reason>"` on a hard stop.
 
   Never `claim`, `close`, `release`, `approve`, `set`, or touch any other
   item. Everything else about the item is your sender's.

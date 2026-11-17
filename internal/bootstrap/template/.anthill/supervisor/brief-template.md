@@ -14,13 +14,13 @@ with any user-specified sequencing. Work drawing on unrelated
 information goes to its own worker>
 
 ITEM
-<the backlog id this task implements, or "none — <one-line reason>". With
-an id, the worker holds that item: on pickup
-`anthill backlog claim <id> --by <agent-name>` (the spawner adds `--force`
+<the backlog key this task implements (e.g. `ANT-74`), or "none —
+<one-line reason>". With a key, the worker holds that item: on pickup
+`anthill backlog claim <key> --by <agent-name>` (the spawner adds `--force`
 only when the item is not ready and the user's mission is its greenlight);
-on finish `anthill backlog deliver <id> --by <agent-name> --evidence "…"`
+on finish `anthill backlog deliver <key> --by <agent-name> --evidence "…"`
 carrying the DEFINITION OF DONE evidence; on a hard stop
-`anthill backlog block <id> "<reason>"`. The worker never closes,
+`anthill backlog block <key> "<reason>"`. The worker never closes,
 releases, or approves, and never touches another item — the supervisor
 verifies the delivered evidence and closes>
 

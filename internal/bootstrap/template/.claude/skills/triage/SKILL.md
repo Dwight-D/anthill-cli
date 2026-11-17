@@ -11,7 +11,7 @@ description: Triage the project backlog — dedup intake items, route them to
 
 General triage procedure. The project specifics live in `.anthill/backlog/`:
 `workstreams.md` (workstream definitions, triage profiles, judgment signals)
-and `bindings.md` (schema, commands, id scheme, posture). Read both on
+and `bindings.md` (schema, commands, key scheme, posture). Read both on
 invocation; if either is missing, the project isn't onboarded — derive them
 with the user before triaging anything.
 
@@ -32,15 +32,15 @@ finish and `verify` is a real headless test. When in doubt, `design`.
 ## Per intake item (`anthill backlog list --untriaged`)
 
 1. **Dedup** against all workstream directories and the recent CHANGELOG.
-   Duplicate → `anthill backlog close <id> --discard "duplicate of <id>"`.
+   Duplicate → `anthill backlog close <key> --discard "duplicate of ANT-12"`.
    Fold narrow items under an existing umbrella; split a bundle into pieces
    with independent readiness.
 2. **Route.** Assign the workstream per the definitions; the submitter's
    hint is advisory only. A general capability buried inside a specific ask
    is extracted to its own item and routed separately from the carrier.
    Fits no workstream, or not worth doing →
-   `anthill backlog close <id> --discard "<reason>"`, never leave it to rot.
-   Worth doing but not now → `anthill backlog park <id> "<reason>"`.
+   `anthill backlog close <key> --discard "<reason>"`, never leave it to rot.
+   Worth doing but not now → `anthill backlog park <key> "<reason>"`.
 3. **Classify per the workstream's triage profile** — the profile names the
    gates that apply (value, safety, feasibility, repro…), the change types,
    and the **never-auto** types. Set `change-type`, `risk`, `verify`,
@@ -56,14 +56,14 @@ finish and `verify` is a real headless test. When in doubt, `design`.
    - `## Triage` — why this workstream, disposition, and priority; the value
      verdict in prose.
 5. **Record** with one call:
-   `anthill backlog triage <id> workstream=<ws> summary="…" change-type=… risk=… verify="…" disposition=… [priority=…]`.
+   `anthill backlog triage <key> workstream=<ws> summary="…" change-type=… risk=… verify="…" disposition=… [priority=…]`.
    It moves the item into its workstream as `status: triaged`. Triage
    proposes: `dispatch` stays `proposed` until the user approves
    (`approve` / `fast-track`), directly or via `expedite`.
 6. **Re-scan** already-triaged items whose context changed — an approval
    can make an open sibling redundant; re-run dedup after approvals; revisit
    `open` items and re-disposition with
-   `anthill backlog set <id> disposition=…` when an approach has emerged.
+   `anthill backlog set <key> disposition=…` when an approach has emerged.
 
 Finish a pass with `anthill backlog validate`.
 

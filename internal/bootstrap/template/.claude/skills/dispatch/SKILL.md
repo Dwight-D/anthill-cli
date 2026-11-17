@@ -44,10 +44,10 @@ Pick the worker's name first; the claim handle is
 `dispatcher:<worker-name>`. Claim atomically:
 
 - `anthill backlog claim --next --by dispatcher:<worker-name> [--workstream <ws>]`
-- `anthill backlog claim <id> --by dispatcher:<worker-name> [--force]`
+- `anthill backlog claim <key> --by dispatcher:<worker-name> [--force]`
 
 Conflict (exit 5) → another tier took it; skip to the next candidate. Then
-`anthill backlog show <id>` — its output goes into the brief.
+`anthill backlog show <key>` — its output goes into the brief.
 
 ## 3. Package and spawn
 
@@ -55,8 +55,8 @@ Spawn a **fresh subagent** per item with a self-contained brief:
 
 - First line invokes the `dispatch-receive` skill (the worker contract —
   never restate it).
-- The item id, the claim handle (`dispatcher:<worker-name>`), and the full
-  `anthill backlog show <id>` output, plus any referenced spec paths.
+- The item key (`ANT-74`), the claim handle (`dispatcher:<worker-name>`), and the full
+  `anthill backlog show <key>` output, plus any referenced spec paths.
 - The workstream's **dispatch route** (e.g. node work follows
   `create-node`) and **evidence rules**, copied from workstreams.md.
 - Territory: the item's footprint; co-tenancy/resource rules per
@@ -69,26 +69,26 @@ Spawn a **fresh subagent** per item with a self-contained brief:
 
 On `outcome: delivered` the item sits in `status: validation` with the
 worker's evidence under `## Evidence`. Re-read it with
-`anthill backlog show <id>` and hold that evidence to the item's `## Acceptance`, its `verify`,
+`anthill backlog show <key>` and hold that evidence to the item's `## Acceptance`, its `verify`,
 and the workstream's evidence rules — **evidence, not assertions**. Re-run
 `verify` yourself when it is cheap.
 
 ## 5. Close out (never leave the item claimed)
 
-- **verified** → `anthill backlog close <id> --done "<one line>"` (archives
+- **verified** → `anthill backlog close <key> --done "<one line>"` (archives
   to `done/`, CHANGELOG line). File any follow-ups the worker proposed as new
   intake items (`submit`, `--reporter worker`). Codify learnings to their
   durable homes.
 - **evidence missing or failing** →
-  `anthill backlog close <id> --reject "<what is missing>"` (back to
+  `anthill backlog close <key> --reject "<what is missing>"` (back to
   `in-progress`, same claim) and send the worker back once; a second
-  failure → `anthill backlog block <id> "<reason>"`.
+  failure → `anthill backlog block <key> "<reason>"`.
 - **blocked** → the worker blocked it already, or
-  `anthill backlog block <id> "<reason>"` from its report.
+  `anthill backlog block <key> "<reason>"` from its report.
 - **escalate** → persist the returned record to `.anthill/escalations/`
   per the `escalate` skill,
-  `anthill backlog block <id> "escalated: <file>"`, signal your parent tier.
-- **worker gone, nothing delivered** → `anthill backlog release <id>` (back
+  `anthill backlog block <key> "escalated: <file>"`, signal your parent tier.
+- **worker gone, nothing delivered** → `anthill backlog release <key>` (back
   to `triaged`) when no work landed; otherwise block with the reason.
 
 Report the outcome and stop — one item per invocation, except the

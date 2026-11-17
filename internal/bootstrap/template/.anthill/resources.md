@@ -21,7 +21,7 @@ Then derive the caps.
 
   ## Git checkout (shared, no worktree isolation in use)
   One shared integration branch for concurrent agents; never main.
-  Path-scoped staging only (never `git add -A`), task-id-tagged commits,
+  Path-scoped staging only (never `git add -A`), commits tagged with the task or item key,
   push after each task-closing commit; fetch+retry on races, never force.
 
   ## Unity Editor (single instance)

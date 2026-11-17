@@ -15,8 +15,8 @@ Template (`<yyyy-mm-dd>-<slug>.md`):
     ---
     to: supervisor            # dispatcher | supervisor | user
     from: dispatcher
-    item: <backlog id>        # optional — omit for non-item incidents; the item
-                              # sits blocked ("escalated: <this file>") until applied
+    item: <backlog key>       # optional (e.g. ANT-74) — omit for non-item incidents;
+                              # the item sits blocked ("escalated: <this file>") until applied
     status: open              # open | answered | applied
     opened: <yyyy-mm-dd>
     ---

@@ -21,8 +21,8 @@ Updated: <date> (<who / session>)
 
 ## Items (in order)
 
-| # | item id | status | outcome / pointer |
+| # | key     | status | outcome / pointer |
 |---|---------|--------|-------------------|
-| 1 | <id>    | pending \| in-progress \| validation \| done \| blocked \| escalated | <one line: changelog ref, block reason, or escalation file> |
-| 2 | <id>    | pending | |
+| 1 | ANT-74  | pending \| in-progress \| validation \| done \| blocked \| escalated | <one line: changelog ref, block reason, or escalation file> |
+| 2 | <key>   | pending | |
 | … | …       | …       | |

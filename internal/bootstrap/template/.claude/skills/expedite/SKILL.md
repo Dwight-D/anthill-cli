@@ -3,7 +3,7 @@ name: expedite
 description: Fast-lane a set of already-decided improvements into triaged,
   fast-tracked backlog items in one pass, pinned to the top of every queue for
   batch dispatch. Use when the user has made the calls (in a decisions doc, a
-  description, or by naming existing item ids) and wants them queued for
+  description, or by naming existing item keys) and wants them queued for
   implementation. The user's invocation IS the approval; an agent must never
   self-expedite.
 ---
@@ -28,7 +28,7 @@ the propose-only posture exists to require. In doubt: use `triage` and stop.
 
 One of: a reference doc with the user's decisions (point item bodies back at
 it rather than re-typing rationale), a plain description/list, or existing
-item ids being approved.
+item keys (`ANT-74`) being approved.
 
 ## Procedure
 
@@ -39,7 +39,7 @@ item ids being approved.
 2. **Triage with full rigor** each item still `status: new` — expedite
    changes who approves and how fast, never the gate logic. Follow `triage`
    steps 3–5: write `## Description`, `## Acceptance`, `## Triage`, then
-   `anthill backlog triage <id> workstream=<ws> summary="…" change-type=… risk=… verify="…" disposition=… [priority=…]`.
+   `anthill backlog triage <key> workstream=<ws> summary="…" change-type=… risk=… verify="…" disposition=… [priority=…]`.
    Never-auto change types still never take `disposition: auto` even though
    the user's invocation approves them, and an `auto` item's `verify` must be
    a real acceptance test the dispatching session can hold itself to. A
@@ -48,11 +48,11 @@ item ids being approved.
    `## Triage` linking the source and stating the chosen option +
    qualifiers.
 4. **Fast-track** the decided set in one call:
-   `anthill backlog fast-track <id>…`.
+   `anthill backlog fast-track <key>…`.
 5. **Split bundles** whose halves differ in readiness: fast-track the
    decided half; the deferred half keeps `dispatch: proposed` with the
    reason in its `## Triage`, out of the batch.
-6. `anthill backlog validate`, then report the batch: ids, one line each
+6. `anthill backlog validate`, then report the batch: keys, one line each
    with the disposition, and the handoff — run `dispatch fast-tracked` to
    sweep the `auto` ones; `design` / `interactive` ones wait for a session
    with the user.

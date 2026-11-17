@@ -16,6 +16,10 @@ supervised work. Derive per project — the categories:
   communication>: stop and ask, with a recommendation.
 - **Config-file ownership** — <which files only the user edits: CI config,
   permission settings, this file, release manifests>.
+- **Backlog schema and key prefix** — changing the item frontmatter schema
+  or the `key-prefix` in `.anthill/backlog/workstreams.md` once items exist:
+  stop and ask. Keys (`ANT-74`) written in briefs, records, and prose resolve
+  only under the prefix they were written with.
 - **<Domain-specific irreversibles>** — <anything in this project that can't
   be cheaply undone>.
 

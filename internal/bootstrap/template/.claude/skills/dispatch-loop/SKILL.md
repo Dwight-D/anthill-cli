@@ -41,7 +41,7 @@ completion re-wake you (`wake-up`, turn-boundary discipline).
 1. **Wake up** per the `wake-up` skill: drain the mailbox and
    `.anthill/dispatch/control.md`; sweep escalations addressed to
    `dispatcher` (apply answered ones you raised —
-   `anthill backlog unblock <id>` or `anthill backlog unblock <id> --release`,
+   `anthill backlog unblock <key>` or `anthill backlog unblock <key> --release`,
    annotate the item's body, archive to LOG.md); refresh any view the drain
    invalidated. Silent when empty.
 2. **Orphan check** (first wake-up, after a recycle, and whenever a
@@ -51,8 +51,8 @@ completion re-wake you (`wake-up`, turn-boundary discipline).
    and close them (step 5). Items `in-progress` under a `dispatcher:` handle
    whose worker is dead, and ledger rows stuck `in-progress`
    behind a finished or dead worker → verify from state, then
-   `anthill backlog release <id>` (nothing landed) or
-   `anthill backlog block <id> "<reason>"`. A missing signal is not evidence the worker died,
+   `anthill backlog release <key>` (nothing landed) or
+   `anthill backlog block <key> "<reason>"`. A missing signal is not evidence the worker died,
    and finished-but-uncommitted work looks identical to died-mid-edit:
    **never reset paths to recover from a suspected orphan** — escalate
    instead.
@@ -60,7 +60,7 @@ completion re-wake you (`wake-up`, turn-boundary discipline).
    sweep → the next ready item in sweep order, skipping never-implicit
    workstreams and territory that collides with a live agent's (leave
    those ready, note the skip). Re-read the pick with
-   `anthill backlog show <id>` before acting — another tier may have claimed or re-scoped it; on
+   `anthill backlog show <key>` before acting — another tier may have claimed or re-scoped it; on
    mismatch, re-select.
 4. **Hand off, then yield.** Run one `dispatch` handoff: claim
    (`--by dispatcher:<worker-name>`), mark the ledger row `in-progress`, spawn the fresh worker, end the turn. Serial

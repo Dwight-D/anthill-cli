@@ -52,7 +52,8 @@ Always: the **reporter** — who filed it, per the tier you run in:
    into `intake/` following the schema in `bindings.md` (`title`, `value`,
    `reporter`, optional `summary`/`source`/`hint`, `status: new`,
    `dispatch: proposed`).
-3. **Report** the created id in one line and continue the original task. A
+3. **Report** the created key (e.g. `ANT-74`), as the CLI printed it, in
+   one line and continue the original task. A
    mid-task submission is a capture, not a context switch.
 
 ## Boundaries

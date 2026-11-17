@@ -29,12 +29,13 @@ log-and-continue vs. stop-and-ask rules below.
   every working state. Under co-tenancy (other agents share this checkout):
   use the shared integration branch instead of a per-agent branch, stage only
   your own paths (never `git add -A`), tag commits with your task or item
-  id.
-- When the brief names a backlog item (its ITEM section carries an id), you
+  key.
+- When the brief names a backlog item (its ITEM section carries a key such
+  as `ANT-74`), you
   hold that item: claim it before the first edit with the command the brief
-  gives (`anthill backlog claim <id> --by <your-name>`), deliver it before
-  reporting (`anthill backlog deliver <id> --by <your-name> --evidence "…"`),
-  and on a hard stop `anthill backlog block <id> "<reason>"`. Advance only
+  gives (`anthill backlog claim <key> --by <your-name>`), deliver it before
+  reporting (`anthill backlog deliver <key> --by <your-name> --evidence "…"`),
+  and on a hard stop `anthill backlog block <key> "<reason>"`. Advance only
   that item; closing, approving, and releasing belong to the controller.
 - When a non-blocking question comes up mid-task: don't stop. Make the
   reasonable routine choice, log it as one line in the decisions log named in

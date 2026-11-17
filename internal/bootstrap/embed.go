@@ -14,7 +14,7 @@ import (
 // .anthill/framework.md synced-through by `scaffold`, and compared by `sync`
 // and `doctor`. tools/vendor.ps1 re-vendors template/ and updates this before
 // a tagged CLI release.
-const TemplateRef = "f10dbcf4193a0f88adad62216b8f63593385aaf8"
+const TemplateRef = "bd91df4ac9111d65dbbe5c7e4a7d36bb28c667e9"
 
 // TemplateRepo is the upstream framework home the payload is vendored from.
 const TemplateRepo = "https://github.com/Dwight-D/anthill"

@@ -241,16 +241,23 @@ func TestValidateTopLevelAlias(t *testing.T) {
 	wantExit(t, runIn(t, root, "validate"), 0)
 }
 
-// TestNewOnFreshTreeStampsSchema covers the empty-tree rule: a scaffold has no
-// items and no current stamp; the first `new` stamps `schema: 3` and a
-// key-prefix so validate applies.
+// TestNewOnFreshTreeStampsSchema covers the scaffold rule: the template ships
+// `schema: 3` with a `<PREFIX>` placeholder for key-prefix, so an empty tree
+// validates, `new` refuses until a prefix is set, and `init --force` fills
+// the placeholder in place; the first `new` then allocates under it.
 func TestNewOnFreshTreeStampsSchema(t *testing.T) {
 	root := scaffoldFresh(t)
 	wantExit(t, runIn(t, root, "backlog", "validate"), 0)
-	wantExit(t, runIn(t, root, "backlog", "new", "--title", "First", "--value", "v"), 0)
+	r := runIn(t, root, "backlog", "new", "--title", "First", "--value", "v")
+	wantExit(t, r, 6)
+	wantContains(t, r.stderr, "key-prefix", "new stderr")
+	wantExit(t, runIn(t, root, "init", "--force", "--key-prefix", "TST"), 0)
+	r = runIn(t, root, "backlog", "new", "--title", "First", "--value", "v")
+	wantExit(t, r, 0)
+	wantContains(t, r.stdout, "TST-1", "new stdout")
 	fm := readFrontmatter(t, filepath.Join(backlogDir(root), "workstreams.md"))
-	if fm["schema"] != "3" || fm["key-prefix"] == "" {
-		t.Fatalf("first new did not stamp schema 3 + key-prefix: %v", fm)
+	if fm["schema"] != "3" || fm["key-prefix"] != "TST" {
+		t.Fatalf("init did not fill schema 3 + key-prefix: %v", fm)
 	}
 	wantExit(t, runIn(t, root, "backlog", "validate"), 0)
 }

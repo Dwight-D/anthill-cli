@@ -4,6 +4,14 @@ Release notes for the Anthill CLI. Newest first.
 
 ## Unreleased
 
+### Changed — embedded template re-vendored at anthill-fw `bd91df4`
+
+Skills, templates and adoption docs refer to backlog items by key
+(`ANT-74`); the scaffolded `workstreams.md` ships `schema: 3` and a
+`key-prefix: <PREFIX>` placeholder that `anthill init [--key-prefix]` fills.
+Consumer action: `anthill backlog migrate --key-prefix XXX`, then
+`anthill sync`.
+
 ### Changed — item keys, backlog schema 3 (breaking)
 
 Items are identified by a key `PREFIX-N` (`ANT-74`) per

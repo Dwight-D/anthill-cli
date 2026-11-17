@@ -1,5 +1,6 @@
 ---
-schema: 2
+schema: 3
+key-prefix: <PREFIX>   # 2-5 uppercase letters; anthill init fills it
 sweep-order: bugs, product, dev, process
 never-implicit:
 change-types:
@@ -20,8 +21,13 @@ closes them. Loaded by the `triage`/`dispatch`/`expedite` skills on invocation.
 
 The frontmatter above is the machine-readable contract the `anthill` CLI
 reads:
-- **schema** — the backlog schema version; `2`. Written by
-  `anthill backlog migrate`; keep it.
+- **schema** — the backlog schema version; `3`. Written by `anthill init`
+  and `anthill backlog migrate`; keep it.
+- **key-prefix** — the installation's item-key prefix: 2–5 uppercase ASCII
+  letters. Every item key is `<key-prefix>-<number>` (`ANT-74`). `anthill
+  init` fills it (`--key-prefix`, default: the first three letters of the
+  root directory's name, uppercased); set once, see `bindings.md` *Key
+  scheme* before ever changing it.
 - **sweep-order** — the order bare `dispatch` walks workstreams.
 - **never-implicit** — workstreams only ever dispatched deliberately (never
   swept by bare `dispatch`). Leave empty unless you have a stream that must

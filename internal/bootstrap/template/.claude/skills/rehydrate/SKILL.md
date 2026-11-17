@@ -21,7 +21,7 @@ run `/rehydrate`, end the session, start a fresh one, invoke
    it first. Never leave a worker running past the snapshot.
 2. **Snapshot the task board** to `.anthill/supervisor/board.md`: the
    mission framing (goal, origin), then one row per task — title, backlog
-   item id (or `none`), board status (pending / in-progress / blocked /
+   item key (or `none`), board status (pending / in-progress / blocked /
    done), and a one-line pointer (branch, file, blocking reason). Position only — findings live in
    their durable homes, not here.
 3. **Sweep the rest of the durable set.** Agenda current (user intent
