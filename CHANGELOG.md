@@ -4,6 +4,8 @@ Release notes for the Anthill CLI. Newest first.
 
 ## Unreleased
 
+- Embedded framework template re-vendored at anthill-fw `f10dbcf` (backlog v2 skills and templates; supervisor reporting/agenda hygiene). Consumer action: `anthill backlog migrate`, then `anthill sync`, then re-derive `.anthill/backlog/bindings.md` and `.anthill/supervisor/brief-template.md`.
+
 ### Changed — backlog schema 2 (breaking)
 
 The backlog follows `docs/BACKLOG_V2_SPEC.md`.
