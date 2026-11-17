@@ -2,6 +2,7 @@ package backlog
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 
@@ -34,11 +35,15 @@ type Item struct {
 	Session     string `yaml:"session,omitempty"`
 	DeliveredAt string `yaml:"delivered-at,omitempty"`
 	ClosedAt    string `yaml:"closed-at,omitempty"`
+	FormerID    string `yaml:"former-id,omitempty"` // pre-key slug id, written only by migrate
 
-	// Derived, never serialised into frontmatter.
-	ID   string `yaml:"-"`
-	Path string `yaml:"-"`
-	Body string `yaml:"-"`
+	// Derived, never serialised into frontmatter. ID is the canonical key
+	// (`ANT-74`); Number is its numeric part (0 for an item whose filename is
+	// not in key form).
+	ID     string `yaml:"-"`
+	Number int    `yaml:"-"`
+	Path   string `yaml:"-"`
+	Body   string `yaml:"-"`
 }
 
 // RealVerify reports whether v is a concrete acceptance test (non-empty and not
@@ -77,8 +82,9 @@ func (it *Item) marshalFile() ([]byte, error) {
 }
 
 // parseItem decodes a markdown file's bytes into an Item. id and path are the
-// derived fields supplied by the caller. Unknown keys are ignored here; the
-// strict unknown-key check lives in validation.
+// derived fields supplied by the caller; the number is parsed from the
+// filename when it is in key form. Unknown keys are ignored here; the strict
+// unknown-key check lives in validation.
 func parseItem(data []byte, id, path string) (*Item, error) {
 	fm, body, err := mdfile.Split(data)
 	if err != nil {
@@ -91,5 +97,8 @@ func parseItem(data []byte, id, path string) (*Item, error) {
 	it.ID = id
 	it.Path = path
 	it.Body = body
+	if n, ok := ParseFilename(filepath.Base(path)); ok {
+		it.Number = n
+	}
 	return &it, nil
 }

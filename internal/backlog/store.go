@@ -35,6 +35,16 @@ func invalid(format string, a ...any) *ValidationError {
 // Store is the file-backed backlog under <root>/.anthill/backlog.
 type Store struct {
 	root string
+
+	// Warnf receives non-fatal notices (a sequence file that could not be
+	// written). nil discards them.
+	Warnf func(format string, a ...any)
+}
+
+func (s *Store) warnf(format string, a ...any) {
+	if s.Warnf != nil {
+		s.Warnf(format, a...)
+	}
 }
 
 // NewStore returns a store rooted at the directory containing .anthill.
@@ -202,10 +212,14 @@ func splitList(s string) []string {
 	return out
 }
 
-// scanDir loads all *.md items in one directory, assigning each item its
-// workstream context is left to the caller (dir name). Files that fail to parse
-// are returned as errors keyed by path only via the collect callback.
+// scanDir loads all item files (`NNNN-<slug>.md`) in one directory; the
+// workstream context is the caller's (dir name). Files that are not in item
+// form or fail to parse are skipped here and surfaced by Validate.
 func (s *Store) scanDir(dir string) ([]*Item, error) {
+	return s.scanDirWithPrefix(dir, s.prefix())
+}
+
+func (s *Store) scanDirWithPrefix(dir, prefix string) ([]*Item, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -215,7 +229,11 @@ func (s *Store) scanDir(dir string) ([]*Item, error) {
 	}
 	var items []*Item
 	for _, e := range entries {
-		if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+		if e.IsDir() {
+			continue
+		}
+		n, ok := ParseFilename(e.Name())
+		if !ok {
 			continue
 		}
 		path := filepath.Join(dir, e.Name())
@@ -223,8 +241,7 @@ func (s *Store) scanDir(dir string) ([]*Item, error) {
 		if rerr != nil {
 			return nil, rerr
 		}
-		id := strings.TrimSuffix(e.Name(), ".md")
-		it, perr := parseItem(data, id, path)
+		it, perr := parseItem(data, Key{Prefix: prefix, Number: n}.String(), path)
 		if perr != nil {
 			continue // malformed files are surfaced by Validate, not here
 		}
@@ -245,15 +262,25 @@ func (s *Store) Load(includeArchived bool) ([]*Item, error) {
 		return nil, err
 	}
 	var all []*Item
+	prefix := s.prefix()
 	for _, d := range dirs {
-		items, err := s.scanDir(d)
+		items, err := s.scanDirWithPrefix(d, prefix)
 		if err != nil {
 			return nil, err
 		}
 		all = append(all, items...)
 	}
-	sort.Slice(all, func(i, j int) bool { return all[i].ID < all[j].ID })
+	sort.Slice(all, func(i, j int) bool { return idLess(all[i], all[j]) })
 	return all, nil
+}
+
+// idLess orders items by key number (ITEM_KEYS_SPEC.md §1), falling back to
+// the id string for items without a number.
+func idLess(a, b *Item) bool {
+	if a.Number != b.Number {
+		return a.Number < b.Number
+	}
+	return a.ID < b.ID
 }
 
 // itemDirs lists the directories that hold items: intake, every workstream,
@@ -273,38 +300,58 @@ func (s *Store) itemDirs(includeArchived bool) ([]string, error) {
 	return dirs, nil
 }
 
-// takenIDs returns the set of ids currently used across the tree.
-func (s *Store) takenIDs() (map[string]bool, error) {
-	items, err := s.Load(true)
+// Find loads a single item by any accepted reference (ITEM_KEYS_SPEC.md §1):
+// the key (case-insensitive), the bare number, or a former id. A key is
+// located by its number in the filename across intake/, the workstream dirs,
+// then the archives (first match wins; duplicates are validate's business); a
+// former id is matched against every item's former-id field. Unparsed input
+// is never joined into a path.
+func (s *Store) Find(input string) (*Item, error) {
+	prefix := s.prefix()
+	ref, err := ParseRef(input, prefix)
 	if err != nil {
 		return nil, err
 	}
-	taken := map[string]bool{}
-	for _, it := range items {
-		taken[it.ID] = true
+	if !ref.IsKey() {
+		items, err := s.Load(true)
+		if err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			if it.FormerID == ref.Former {
+				return it, nil
+			}
+		}
+		return nil, fmt.Errorf("%w: no item with former id %q", ErrNotFound, ref.Former)
 	}
-	return taken, nil
-}
-
-// Find loads a single item by id, searching intake/, the workstream dirs, then
-// the archives.
-func (s *Store) Find(id string) (*Item, error) {
 	dirs, err := s.itemDirs(true)
 	if err != nil {
 		return nil, err
 	}
 	for _, d := range dirs {
-		path := filepath.Join(d, id+".md")
-		data, rerr := os.ReadFile(path)
-		if rerr != nil {
-			if os.IsNotExist(rerr) {
+		entries, err := os.ReadDir(d)
+		if err != nil {
+			if os.IsNotExist(err) {
 				continue
 			}
-			return nil, rerr
+			return nil, err
 		}
-		return parseItem(data, id, path)
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			if n, ok := ParseFilename(e.Name()); !ok || n != ref.Key.Number {
+				continue
+			}
+			path := filepath.Join(d, e.Name())
+			data, rerr := os.ReadFile(path)
+			if rerr != nil {
+				return nil, rerr
+			}
+			return parseItem(data, ref.Key.String(), path)
+		}
 	}
-	return nil, fmt.Errorf("%w: no item with id %q", ErrNotFound, id)
+	return nil, fmt.Errorf("%w: no item with id %q", ErrNotFound, ref.Key.String())
 }
 
 // NewParams carries the submitter-provided fields for backlog new.
@@ -335,20 +382,25 @@ func Skeleton(description string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// allocAttempts bounds the create-and-retry loop of New.
+const allocAttempts = 20
+
 // New creates and persists an intake item (status new, dispatch proposed),
-// generating a unique id from the title and stamping created-at. It validates
-// the result before persisting. On a tree with no schema stamp and no items
-// yet, it stamps `schema: 2` first (there is nothing to migrate).
+// allocating the next sequential key (ITEM_KEYS_SPEC.md §2.2) and stamping
+// created-at. It validates the result before persisting. The file is created
+// exclusively (O_EXCL) so two concurrent calls never share a number; the
+// sequence high-water mark is raised afterwards (a failure there is a
+// warning). On a tree with no schema stamp and no items yet, it stamps
+// `schema: 3` and the key prefix first (there is nothing to migrate); a tree
+// holding items under an earlier schema must be migrated first.
 func (s *Store) New(p NewParams) (*Item, error) {
-	base := Slug(p.Title)
-	if base == "" {
-		return nil, invalid("title slugifies to empty; provide an alphanumeric title")
+	if strings.TrimSpace(p.Title) == "" {
+		return nil, invalid("title is required")
 	}
-	taken, err := s.takenIDs()
+	prefix, err := s.prepareForAllocation()
 	if err != nil {
 		return nil, err
 	}
-	id := UniqueID(base, taken)
 	priority := p.Priority
 	if priority == "" {
 		priority = "normal"
@@ -364,25 +416,104 @@ func (s *Store) New(p NewParams) (*Item, error) {
 		Source:    p.Source,
 		Hint:      p.Hint,
 		CreatedAt: Stamp(),
-		ID:        id,
-		Path:      filepath.Join(s.intakeDir(), id+".md"),
 		Body:      Skeleton(p.Description),
 	}
 	it.appendLog("new", ResolveActor(""), "", "")
 	if err := s.validateForPersist(it); err != nil {
 		return nil, err
 	}
-	if len(taken) == 0 {
-		if v, _ := s.SchemaVersion(); v == 0 {
-			if err := s.StampSchema(); err != nil {
-				return nil, err
-			}
-		}
-	}
-	if err := s.persist(it); err != nil {
+	data, err := it.marshalFile()
+	if err != nil {
 		return nil, err
 	}
-	return it, nil
+	if err := os.MkdirAll(s.intakeDir(), 0o755); err != nil {
+		return nil, err
+	}
+	slug := Slug(p.Title)
+	for attempt := 0; attempt < allocAttempts; attempt++ {
+		high, err := s.maxNumber()
+		if err != nil {
+			return nil, err
+		}
+		n := high + 1
+		path := filepath.Join(s.intakeDir(), FormatFilename(n, slug))
+		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+		if err != nil {
+			if errors.Is(err, os.ErrExist) {
+				continue
+			}
+			return nil, err
+		}
+		_, werr := f.Write(data)
+		if cerr := f.Close(); werr == nil {
+			werr = cerr
+		}
+		if werr != nil {
+			os.Remove(path)
+			return nil, werr
+		}
+		// A concurrent new with another title creates a different filename
+		// under the same number; the exclusive create cannot see it. Any other
+		// NNNN-*.md with this number means a lost race: give the file back and
+		// retry (every loser retries, so the first creator always keeps its
+		// number).
+		if other, err := s.numberTakenElsewhere(n, path); err != nil {
+			os.Remove(path)
+			return nil, err
+		} else if other {
+			os.Remove(path)
+			time.Sleep(time.Duration(5+attempt*3) * time.Millisecond)
+			continue
+		}
+		it.ID = Key{Prefix: prefix, Number: n}.String()
+		it.Number = n
+		it.Path = path
+		if err := s.bumpSequence(n); err != nil {
+			s.warnf("warning: sequence file not updated: %v", err)
+		}
+		return it, nil
+	}
+	return nil, fmt.Errorf("%w: could not allocate an item number after %d attempts", ErrConflict, allocAttempts)
+}
+
+// prepareForAllocation checks the tree can take a new key and returns the
+// prefix to render it with. An unstamped, empty tree is stamped with the
+// current schema and a derived prefix; a tree with items under an older
+// schema needs migrate; a stamped tree without a key prefix (or with the
+// template's unfilled placeholder) needs the fix named by
+// ErrKeyPrefixMissing.
+func (s *Store) prepareForAllocation() (string, error) {
+	v, err := s.SchemaVersion()
+	if err != nil {
+		return "", err
+	}
+	prefix, err := s.KeyPrefix()
+	if err != nil {
+		return "", err
+	}
+	if v != CurrentSchema {
+		n, err := s.countItemFiles()
+		if err != nil {
+			return "", err
+		}
+		if n > 0 {
+			return "", ErrNeedsMigration
+		}
+		if prefix == "" {
+			prefix = DefaultKeyPrefix(s.root)
+		}
+		if err := s.StampSchema(); err != nil {
+			return "", err
+		}
+		if err := s.StampKeyPrefix(prefix); err != nil {
+			return "", err
+		}
+		return prefix, nil
+	}
+	if prefix == "" {
+		return "", ErrKeyPrefixMissing
+	}
+	return prefix, nil
 }
 
 // persist atomically writes the item to its Path.
@@ -422,11 +553,12 @@ func (s *Store) Move(it *Item, ws string) error {
 	return nil
 }
 
-// relocate writes the item into dir (validated, atomic) and removes the old
-// file. On failure the in-memory Path is rolled back.
+// relocate writes the item into dir (validated, atomic) under its current
+// filename and removes the old file. On failure the in-memory Path is rolled
+// back.
 func (s *Store) relocate(it *Item, dir string) error {
 	oldPath := it.Path
-	newPath := filepath.Join(dir, it.ID+".md")
+	newPath := filepath.Join(dir, filepath.Base(oldPath))
 	it.Path = newPath
 	if err := s.validateForPersist(it); err != nil {
 		it.Path = oldPath
@@ -444,8 +576,39 @@ func (s *Store) relocate(it *Item, dir string) error {
 	return nil
 }
 
-// Delete removes an item file (terminal close).
+// RenameForTitle renames the item file so its cosmetic slug follows the
+// current title (same number, same directory), appending a Log line. It
+// reports whether the file moved. An item without a number is left alone.
+func (s *Store) RenameForTitle(it *Item, by string) (bool, error) {
+	if it.Number == 0 || it.Path == "" {
+		return false, nil
+	}
+	oldName := filepath.Base(it.Path)
+	newName := FormatFilename(it.Number, Slug(it.Title))
+	if newName == oldName {
+		return false, nil
+	}
+	it.appendLog("rename "+oldName+" → "+newName, ResolveActor(by), "", "")
+	oldPath := it.Path
+	it.Path = filepath.Join(filepath.Dir(oldPath), newName)
+	if err := s.persist(it); err != nil {
+		it.Path = oldPath
+		return false, err
+	}
+	if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
+		return true, fmt.Errorf("remove old file %s after rename: %w", oldPath, err)
+	}
+	return true, nil
+}
+
+// Delete removes an item file (terminal close). The freed number is recorded
+// in `sequence` first so it is never reused (ITEM_KEYS_SPEC.md §2.1).
 func (s *Store) Delete(it *Item) error {
+	if it.Number > 0 {
+		if err := s.bumpSequence(it.Number); err != nil {
+			s.warnf("warning: sequence file not updated: %v", err)
+		}
+	}
 	return os.Remove(it.Path)
 }
 

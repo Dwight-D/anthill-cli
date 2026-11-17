@@ -2,6 +2,50 @@
 
 Release notes for the Anthill CLI. Newest first.
 
+## Unreleased
+
+### Changed — item keys, backlog schema 3 (breaking)
+
+Items are identified by a key `PREFIX-N` (`ANT-74`) per
+`docs/ITEM_KEYS_SPEC.md` §1–§3; `docs/BACKLOG_V2_SPEC.md` §1.1, §1.3, §6.1,
+§6.6, §9 and `docs/CLI_INTERFACE_SPEC.md` §4 point there.
+
+- **Key.** `key-prefix` (2–5 uppercase letters) lives in
+  `.anthill/backlog/workstreams.md`; numbers are allocated sequentially
+  (highest number in any item dir or the `sequence` high-water mark, plus
+  one) with an exclusive file create, so concurrent `new` calls never share
+  a number and removed/pruned numbers are never reused. Files are
+  `NNNN-<slug>.md`; the slug tail is cosmetic and follows `set title=`.
+- **Resolution.** Every `<id>` argument (`show`, `set`, `claim`, …,
+  `session link --item`, `session list --item`, `escalation raise --item`)
+  accepts the key case-insensitively (`ant-74`), the bare number (`74`), or
+  a migrated item's `former-id`; output, JSON `id`, Log and CHANGELOG lines
+  and the sessions ledger always carry the canonical key. Malformed input
+  exits 2; unknown references exit 4. `list --sort id` and the rank
+  tie-break compare numerically.
+- **New verbs/flags.** `backlog renumber <id> [--to N]` (branch-merge
+  collision repair; rewrites ledger and escalation references),
+  `backlog migrate --key-prefix XXX`, `init --key-prefix XXX` (default:
+  the first three letters of the root directory name; fills the template's
+  `<PREFIX>` placeholder in place). `init` writes `schema: 3`.
+- **Validation.** New rules `key-prefix-missing`, `key-prefix-invalid`,
+  `filename-form`, `former-id-unique`; `id-unique` is keyed on the number
+  across every directory. `validate`/`doctor` (and now `new`) refuse a tree
+  holding items under an earlier schema until migrated (exit 6).
+- **Migration.** `migrate` chains v2 → v3 after v1 → v2: items are
+  numbered in `created-at` order, renamed in place, stamped with
+  `former-id` and a Log line, `sequence` is written, `schema: 3` and
+  `key-prefix` are stamped, and every sessions-ledger `item` and escalation
+  `item:` naming an old id is rewritten; `--dry-run` lists
+  `old-id → ANT-N` and the reference rewrites. Idempotent at schema 3.
+- **TUI.** Backlog mode shows a title column after the key.
+- `show --json` / `--fields` expose `former-id` when present.
+
+Consumer action after upgrading: `anthill backlog migrate --key-prefix XXX`
+(the flag is required until `workstreams.md` carries `key-prefix`), then
+`anthill sync` for the skills. Prose, ledger records and escalations written
+under the old slug ids keep resolving through `former-id`.
+
 ## 0.1.0 — 2026-11-17
 
 - Embedded framework template re-vendored at anthill-fw `f10dbcf` (backlog v2 skills and templates; supervisor reporting/agenda hygiene). Consumer action: `anthill backlog migrate`, then `anthill sync`, then re-derive `.anthill/backlog/bindings.md` and `.anthill/supervisor/brief-template.md`.

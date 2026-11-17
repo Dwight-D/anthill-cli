@@ -157,9 +157,15 @@ func mkTree(t *testing.T) string {
 	writeRaw(t, filepath.Join(base, "backlog", "CHANGELOG.md"), "# Changelog\n")
 	writeRaw(t, filepath.Join(base, "escalations", "LOG.md"), "# Escalation log\n")
 	writeRaw(t, filepath.Join(base, "backlog", "workstreams.md"),
-		"---\nschema: 2\nsweep-order: bugs, cli, dev, process\nnever-implicit:\n---\n\n# Workstreams\n")
+		"---\nschema: 3\nkey-prefix: "+testPrefix+"\nsweep-order: bugs, cli, dev, process\nnever-implicit:\n---\n\n# Workstreams\n")
 	return root
 }
+
+// testPrefix is the key prefix mkTree stamps; keys read ANT-1, ANT-2, ….
+const testPrefix = "ANT"
+
+// key renders item number n as its canonical key under testPrefix.
+func key(n int) string { return fmt.Sprintf("%s-%d", testPrefix, n) }
 
 func writeRaw(t *testing.T, path, content string) {
 	t.Helper()
@@ -173,9 +179,24 @@ func writeRaw(t *testing.T, path, content string) {
 // backlogDir is <root>/.anthill/backlog.
 func backlogDir(root string) string { return filepath.Join(root, ".anthill", "backlog") }
 
-// itemPath is the on-disk path of item <id> in workstream/intake dir <dir>.
-func itemPath(root, dir, id string) string {
-	return filepath.Join(backlogDir(root), dir, id+".md")
+// itemPath is the on-disk path of item number n (filename NNNN-<slug>.md) in
+// workstream/intake dir <dir>. The slug is cosmetic; the number is the id.
+func itemPath(root, dir string, n int, slug string) string {
+	return filepath.Join(backlogDir(root), dir, fmt.Sprintf("%04d-%s.md", n, slug))
+}
+
+// findItemPath returns the path of the item numbered n in dir regardless of
+// its slug tail (after a rename), or "" when absent.
+func findItemPath(t *testing.T, root, dir string, n int) string {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(backlogDir(root), dir, fmt.Sprintf("%04d-*.md", n)))
+	if err != nil {
+		t.Fatalf("glob: %v", err)
+	}
+	if len(matches) == 0 {
+		return ""
+	}
+	return matches[0]
 }
 
 func changelogPath(root string) string { return filepath.Join(backlogDir(root), "CHANGELOG.md") }
@@ -184,8 +205,9 @@ func escalDir(root string) string { return filepath.Join(root, ".anthill", "esca
 
 func escalLogPath(root string) string { return filepath.Join(escalDir(root), "LOG.md") }
 
-// writeItem writes a markdown item file with YAML frontmatter built from fields.
-func writeItem(t *testing.T, root, dir, id string, fields map[string]string, body string) {
+// writeItem writes item number n (file NNNN-<slug>.md) with YAML frontmatter
+// built from fields. The item's id is key(n).
+func writeItem(t *testing.T, root, dir string, n int, slug string, fields map[string]string, body string) {
 	t.Helper()
 	var b strings.Builder
 	b.WriteString("---\n")
@@ -197,7 +219,7 @@ func writeItem(t *testing.T, root, dir, id string, fields map[string]string, bod
 	if !strings.HasSuffix(body, "\n") {
 		b.WriteString("\n")
 	}
-	writeRaw(t, itemPath(root, dir, id), b.String())
+	writeRaw(t, itemPath(root, dir, n, slug), b.String())
 }
 
 // newFields is a minimal well-formed intake (status new) item.

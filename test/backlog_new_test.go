@@ -5,21 +5,21 @@ import (
 	"testing"
 )
 
-// TestNewPlain covers `backlog new` (§6.1): creates intake/<id>.md with status
-// new, dispatch proposed, created-at, reporter, the body skeleton, and no
-// workstream; prints the id on stdout, "created" on stderr.
+// TestNewPlain covers `backlog new` (§6.1): creates intake/NNNN-<slug>.md
+// with status new, dispatch proposed, created-at, reporter, the body
+// skeleton, and no workstream; prints the key on stdout, "created" on stderr.
 func TestNewPlain(t *testing.T) {
 	root := mkTree(t)
 	r := runIn(t, root, "backlog", "new", "--title", "Fix the thing", "--value", "removes pain")
 	wantExit(t, r, 0)
 
 	id := strings.TrimSpace(r.stdout)
-	if id != "fix-the-thing" {
-		t.Fatalf("stdout id = %q, want %q", id, "fix-the-thing")
+	if id != key(1) {
+		t.Fatalf("stdout id = %q, want %q", id, key(1))
 	}
-	wantContains(t, r.stderr, "created", "new stderr")
+	wantContains(t, r.stderr, "created "+key(1), "new stderr")
 
-	path := itemPath(root, "intake", "fix-the-thing")
+	path := itemPath(root, "intake", 1, "fix-the-thing")
 	wantFilePresent(t, path)
 	fm := readFrontmatter(t, path)
 	if fm["status"] != "new" || fm["dispatch"] != "proposed" || fm["priority"] != "normal" ||
@@ -33,6 +33,9 @@ func TestNewPlain(t *testing.T) {
 	if _, ok := fm["workstream"]; ok {
 		t.Fatalf("intake item must not carry a workstream key, got %q", fm["workstream"])
 	}
+	if _, ok := fm["former-id"]; ok {
+		t.Fatalf("new item must not carry former-id, got %q", fm["former-id"])
+	}
 	if fm["title"] != "Fix the thing" {
 		t.Fatalf("title = %q, want %q", fm["title"], "Fix the thing")
 	}
@@ -45,8 +48,8 @@ func TestNewJSON(t *testing.T) {
 	wantExit(t, r, 0)
 
 	obj := jsonObj(t, r.stdout)
-	if obj["id"] != "add-a-widget" {
-		t.Fatalf("json id = %v, want add-a-widget", obj["id"])
+	if obj["id"] != key(1) {
+		t.Fatalf("json id = %v, want %s", obj["id"], key(1))
 	}
 	if obj["status"] != "new" || obj["dispatch"] != "proposed" {
 		t.Fatalf("json status/dispatch = %v/%v, want new/proposed", obj["status"], obj["dispatch"])
@@ -54,8 +57,8 @@ func TestNewJSON(t *testing.T) {
 	if obj["title"] != "Add a widget" {
 		t.Fatalf("json title = %v, want %q", obj["title"], "Add a widget")
 	}
-	if _, ok := obj["path"]; !ok {
-		t.Fatalf("json object missing path field: %v", obj)
+	if p, ok := obj["path"].(string); !ok || !strings.HasSuffix(p, "0001-add-a-widget.md") {
+		t.Fatalf("json path = %v, want …/0001-add-a-widget.md", obj["path"])
 	}
 }
 
@@ -78,7 +81,7 @@ func TestNewHintFlag(t *testing.T) {
 	root := mkTree(t)
 	r := runIn(t, root, "backlog", "new", "--title", "Hinted item", "--value", "v", "--hint", "cli")
 	wantExit(t, r, 0)
-	fm := readFrontmatter(t, itemPath(root, "intake", "hinted-item"))
+	fm := readFrontmatter(t, itemPath(root, "intake", 1, "hinted-item"))
 	if fm["hint"] != "cli" {
 		t.Fatalf("hint = %q, want cli", fm["hint"])
 	}
@@ -90,7 +93,7 @@ func TestNewBacklogAlias(t *testing.T) {
 	root := mkTree(t)
 	r := runIn(t, root, "backlog", "new", "--title", "Aliased item", "--value", "v", "--backlog", "dev")
 	wantExit(t, r, 0)
-	fm := readFrontmatter(t, itemPath(root, "intake", "aliased-item"))
+	fm := readFrontmatter(t, itemPath(root, "intake", 1, "aliased-item"))
 	if fm["hint"] != "dev" {
 		t.Fatalf("--backlog alias set hint = %q, want dev", fm["hint"])
 	}
@@ -114,8 +117,25 @@ func TestNewSource(t *testing.T) {
 	root := mkTree(t)
 	r := runIn(t, root, "backlog", "new", "--title", "Sourced item", "--value", "v", "--source", "code review")
 	wantExit(t, r, 0)
-	fm := readFrontmatter(t, itemPath(root, "intake", "sourced-item"))
+	fm := readFrontmatter(t, itemPath(root, "intake", 1, "sourced-item"))
 	if fm["source"] != "code review" {
 		t.Fatalf("source = %q, want %q", fm["source"], "code review")
 	}
+}
+
+// TestNewStampsEmptyTree covers the first `new` on a tree whose workstreams.md
+// has no schema line at all (scaffold output before the template carried one):
+// both schema: 3 and a key-prefix derived from the root dir name are stamped.
+func TestNewStampsEmptyTree(t *testing.T) {
+	root := mkTree(t)
+	writeRaw(t, backlogDir(root)+"/workstreams.md", "---\nsweep-order: bugs, cli, dev, process\n---\n")
+	r := runIn(t, root, "backlog", "new", "--title", "First", "--value", "v")
+	wantExit(t, r, 0)
+	id := strings.TrimSpace(r.stdout)
+	if !strings.HasSuffix(id, "-1") {
+		t.Fatalf("first key = %q, want <derived prefix>-1", id)
+	}
+	ws := readAll(t, backlogDir(root)+"/workstreams.md")
+	wantContains(t, ws, "schema: 3", "schema stamped")
+	wantContains(t, ws, "key-prefix: "+strings.TrimSuffix(id, "-1"), "prefix stamped")
 }

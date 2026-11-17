@@ -2,6 +2,7 @@ package cli
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -33,6 +34,7 @@ func (a *App) newBacklogCommand() *cobra.Command {
 		a.newBacklogDispatchVerb("fast-track", backlog.DispatchFastTracked, "Approve items and pin them to the top of every queue (user-gated)"),
 		a.newBacklogDispatchVerb("unapprove", backlog.DispatchProposed, "Return items to dispatch: proposed"),
 		a.newBacklogClose(),
+		a.newBacklogRenumber(),
 		a.newBacklogValidate(),
 		a.newBacklogMigrate(),
 		a.newBacklogPrune(),
@@ -143,7 +145,7 @@ func (a *App) newBacklogShow() *cobra.Command {
 	var body, noBody bool
 	cmd := &cobra.Command{
 		Use:   "show <id>",
-		Short: "Print one item's frontmatter and body",
+		Short: "Print one item's frontmatter and body (id: ANT-74, 74, or a former id)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			includeBody := body && !noBody
@@ -198,6 +200,7 @@ func (a *App) newBacklogSet() *cobra.Command {
 			}
 			var moveTo string
 			var applied []string
+			titleChanged := false
 			for _, p := range pairs {
 				k, v := p[0], p[1]
 				switch {
@@ -215,6 +218,9 @@ func (a *App) newBacklogSet() *cobra.Command {
 					}
 					moveTo = v
 				default:
+					if k == "title" && v != it.Title {
+						titleChanged = true
+					}
 					it.SetField(k, v)
 					applied = append(applied, k+"="+v)
 				}
@@ -228,16 +234,29 @@ func (a *App) newBacklogSet() *cobra.Command {
 			} else if err := store.Save(it); err != nil {
 				return wrapStoreErr(err)
 			}
+			renamed := false
+			if titleChanged {
+				// The filename's slug tail follows the title (cosmetic; the
+				// number is the id).
+				r, err := store.RenameForTitle(it, "")
+				if err != nil {
+					return wrapStoreErr(err)
+				}
+				renamed = r
+			}
 			if a.json {
 				return a.emitJSON(viewItem(it, false))
 			}
 			if len(applied) > 0 {
-				a.note("set %s: %s", id, strings.Join(applied, " "))
+				a.note("set %s: %s", it.ID, strings.Join(applied, " "))
 			}
 			if moved {
-				a.note("moved %s → %s/", id, moveTo)
+				a.note("moved %s → %s/", it.ID, moveTo)
 			}
-			a.answer("%s", id)
+			if renamed {
+				a.note("renamed %s → %s", it.ID, filepath.Base(it.Path))
+			}
+			a.answer("%s", it.ID)
 			return nil
 		},
 	}
@@ -521,7 +540,7 @@ func (a *App) newBacklogDispatchVerb(use, value, short string) *cobra.Command {
 					return wrapStoreErr(err)
 				}
 				if it.Terminal() {
-					return preconditionErr("item " + id + " is " + it.Status + " (archived); dispatch cannot change")
+					return preconditionErr("item " + it.ID + " is " + it.Status + " (archived); dispatch cannot change")
 				}
 				items = append(items, it)
 			}
@@ -601,13 +620,13 @@ func (a *App) newBacklogClose() *cobra.Command {
 			if err != nil {
 				return wrapStoreErr(err)
 			}
-			a.ledgerTouch(store.Root(), id, sid, "close")
+			a.ledgerTouch(store.Root(), it.ID, sid, "close")
 			if a.json {
 				return a.emitJSON(map[string]any{
-					"id": id, "mode": mode, "status": it.Status, "changelog": changelog,
+					"id": it.ID, "mode": mode, "status": it.Status, "changelog": changelog,
 				})
 			}
-			a.note("closed %s (%s)", id, mode)
+			a.note("closed %s (%s)", it.ID, mode)
 			return nil
 		},
 	}

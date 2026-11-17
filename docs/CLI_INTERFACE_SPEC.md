@@ -336,25 +336,23 @@ half-file.
 
 ### Id generation
 
-- id = kebab **slug of the title**: lowercase; every run of non-alphanumeric
-  characters → a single `-`; leading/trailing `-` stripped; truncated to **≤50
-  chars** (truncate on a hyphen boundary where possible, never leaving a
-  trailing hyphen).
-- **Collision** (slug already used anywhere across `intake/`, the workstream
-  dirs, `done/`, and `discarded/`): append a numeric suffix `-2`, `-3`, … choosing the lowest free
-  integer. The suffix counts toward the 50-char budget (truncate the base
-  further if needed).
-- **Immutable**: the id is assigned once at `new` and never changes — not on
-  `set`, not on the intake→workstream move (the move is a directory change, the
-  filename is preserved), not on a title edit.
+The item id is a **key** `<PREFIX>-N` (`ANT-74`): the installation's
+`key-prefix` from `.anthill/backlog/workstreams.md` and a number allocated
+sequentially per installation and never reused. The file is
+`NNNN-<slug>.md`, the slug being the cosmetic kebab tail of the title (≤40
+chars, follows a title edit). Every verb accepts the key (case-insensitive),
+the bare number, or the `former-id` of a migrated item, and always prints the
+canonical key. Allocation (scan + `sequence` + exclusive create), resolution,
+`renumber`, and the validate rules are the contract of
+[`ITEM_KEYS_SPEC.md`](ITEM_KEYS_SPEC.md) §1–§3.
 
-**`google/uuid` reconciliation.** The id scheme is deliberately a
-human-readable title slug, not a UUID — ids appear in dispatch briefs,
-CHANGELOG lines, and `git log`, where a slug is legible and a UUID is noise.
+**`google/uuid` reconciliation.** The id scheme is deliberately a short,
+human-readable key, not a UUID — ids appear in dispatch briefs, CHANGELOG
+lines, and `git log`, where `ANT-74` is legible and a UUID is noise.
 Recommendation: **do not use `google/uuid` for item or escalation ids.** Keep
 the dependency only if a genuinely opaque internal token is ever needed (none is
 in this spec); otherwise it can be dropped from `go.mod`. Escalation filenames
-follow their own `<yyyy-mm-dd>-<slug>` scheme, also slug-based, also no UUID.
+follow their own `<yyyy-mm-dd>-<slug>` scheme, slug-based, also no UUID.
 
 ---
 
@@ -522,7 +520,9 @@ silently deciding:
    **not** re-slug the id (id immutability wins), so the id can drift from the
    title. Accept that drift, or forbid title edits? **Recommendation: allow
    edits, accept drift** — the id is an opaque handle once assigned.
-    **Answer**: Allow edits, accept drift
+    **Answer**: Allow edits, accept drift. (Under the key scheme the id is
+    `ANT-N` and cannot drift; a title edit renames only the cosmetic slug tail
+    of the filename — `ITEM_KEYS_SPEC.md` §2.1.)
 8. **`escalation` command group scope.** The escalate skill has controllers
    hand-authoring records today. Do you want the CLI to own escalation
    frontmatter (this spec's position — one schema owner for both backlog and

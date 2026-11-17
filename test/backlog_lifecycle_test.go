@@ -10,30 +10,30 @@ import (
 // fixtureStatuses are the stored statuses a transition can be attempted from.
 var fixtureStatuses = []string{"new", "triaged", "in-progress", "validation", "blocked", "parked", "done", "discarded"}
 
-// writeAtStatus writes item id at status st in its canonical directory and
-// returns that directory name.
-func writeAtStatus(t *testing.T, root, id, st string) string {
+// writeAtStatus writes item number n (file NNNN-<slug>.md, title slug) at
+// status st in its canonical directory and returns that directory name.
+func writeAtStatus(t *testing.T, root string, n int, slug, st string) string {
 	t.Helper()
 	var dir string
 	var f map[string]string
 	switch st {
 	case "new":
-		dir, f = "intake", newFields(id)
+		dir, f = "intake", newFields(slug)
 	case "triaged":
-		dir, f = "cli", readyFields(id, "cli")
+		dir, f = "cli", readyFields(slug, "cli")
 	case "in-progress":
-		dir, f = "cli", claimedFields(id, "cli")
+		dir, f = "cli", claimedFields(slug, "cli")
 	case "validation":
-		dir, f = "cli", validationFields(id, "cli")
+		dir, f = "cli", validationFields(slug, "cli")
 	case "blocked":
-		dir, f = "cli", withField(claimedFields(id, "cli"), "status", "blocked")
+		dir, f = "cli", withField(claimedFields(slug, "cli"), "status", "blocked")
 	case "parked":
-		dir, f = "cli", withField(readyFields(id, "cli"), "status", "parked")
+		dir, f = "cli", withField(readyFields(slug, "cli"), "status", "parked")
 	case "done":
-		dir, f = "done", withField(validationFields(id, "cli"), "status", "done")
+		dir, f = "done", withField(validationFields(slug, "cli"), "status", "done")
 		f["closed-at"] = "2026-11-05T00:00:00Z"
 	case "discarded":
-		dir, f = "discarded", withField(readyFields(id, "cli"), "status", "discarded")
+		dir, f = "discarded", withField(readyFields(slug, "cli"), "status", "discarded")
 		f["closed-at"] = "2026-11-05T00:00:00Z"
 	default:
 		t.Fatalf("unknown fixture status %s", st)
@@ -41,7 +41,7 @@ func writeAtStatus(t *testing.T, root, id, st string) string {
 	if err := os.MkdirAll(filepath.Join(backlogDir(root), dir), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeItem(t, root, dir, id, f, "## Description\nd\n\n## Log\n")
+	writeItem(t, root, dir, n, slug, f, "## Description\nd\n\n## Log\n")
 	return dir
 }
 
@@ -120,16 +120,16 @@ var transitions = []transition{
 // TestTransitionTable drives every verb from every stored status: legal moves
 // land on the §2 target status (and directory) with a Log line; every other
 // source status is refused with exit 6 (exit 5 for claiming a claimed item)
-// and leaves the file byte-identical.
+// and leaves the file byte-identical. Moves keep the filename.
 func TestTransitionTable(t *testing.T) {
 	for _, tr := range transitions {
 		for _, from := range fixtureStatuses {
 			t.Run(tr.name+"/"+from, func(t *testing.T) {
 				root := mkTree(t)
-				id := "item"
-				dir := writeAtStatus(t, root, id, from)
-				before := readAll(t, itemPath(root, dir, id))
-				r := runIn(t, root, tr.args(id)...)
+				n, slug := 1, "item"
+				dir := writeAtStatus(t, root, n, slug, from)
+				before := readAll(t, itemPath(root, dir, n, slug))
+				r := runIn(t, root, tr.args(key(n))...)
 				to, ok := tr.legal[from]
 				if !ok {
 					want := 6
@@ -137,7 +137,7 @@ func TestTransitionTable(t *testing.T) {
 						want = 5
 					}
 					wantExit(t, r, want)
-					if readAll(t, itemPath(root, dir, id)) != before {
+					if readAll(t, itemPath(root, dir, n, slug)) != before {
 						t.Fatal("refused transition modified the file")
 					}
 					return
@@ -148,9 +148,9 @@ func TestTransitionTable(t *testing.T) {
 					newDir = tr.dir
 				}
 				if newDir != dir {
-					wantFileGone(t, itemPath(root, dir, id))
+					wantFileGone(t, itemPath(root, dir, n, slug))
 				}
-				path := itemPath(root, newDir, id)
+				path := itemPath(root, newDir, n, slug)
 				fm := readFrontmatter(t, path)
 				if fm["status"] != to {
 					t.Fatalf("status = %q, want %q", fm["status"], to)
@@ -165,9 +165,9 @@ func TestTransitionTable(t *testing.T) {
 // parked in intake returns to new.
 func TestUnparkIntakeReturnsToNew(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "intake", "p", withField(newFields("P"), "status", "parked"), "")
-	wantExit(t, runIn(t, root, "backlog", "unpark", "p"), 0)
-	if fm := readFrontmatter(t, itemPath(root, "intake", "p")); fm["status"] != "new" {
+	writeItem(t, root, "intake", 1, "p", withField(newFields("P"), "status", "parked"), "")
+	wantExit(t, runIn(t, root, "backlog", "unpark", key(1)), 0)
+	if fm := readFrontmatter(t, itemPath(root, "intake", 1, "p")); fm["status"] != "new" {
 		t.Fatalf("status = %q, want new", fm["status"])
 	}
 }
@@ -175,17 +175,17 @@ func TestUnparkIntakeReturnsToNew(t *testing.T) {
 // TestReleaseDropsClaim covers release / unblock --release clearing the claim.
 func TestReleaseDropsClaim(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "r", claimedFields("R", "cli"), "")
-	wantExit(t, runIn(t, root, "backlog", "release", "r"), 0)
-	fm := readFrontmatter(t, itemPath(root, "cli", "r"))
+	writeItem(t, root, "cli", 1, "r", claimedFields("R", "cli"), "")
+	wantExit(t, runIn(t, root, "backlog", "release", key(1)), 0)
+	fm := readFrontmatter(t, itemPath(root, "cli", 1, "r"))
 	for _, k := range []string{"claimed-at", "claimed-by", "session"} {
 		if _, ok := fm[k]; ok {
 			t.Fatalf("release must drop %s: %v", k, fm)
 		}
 	}
-	writeItem(t, root, "cli", "b", withField(claimedFields("B", "cli"), "status", "blocked"), "")
-	wantExit(t, runIn(t, root, "backlog", "unblock", "b", "--release"), 0)
-	if fm := readFrontmatter(t, itemPath(root, "cli", "b")); fm["claimed-by"] != "" {
+	writeItem(t, root, "cli", 2, "b", withField(claimedFields("B", "cli"), "status", "blocked"), "")
+	wantExit(t, runIn(t, root, "backlog", "unblock", key(2), "--release"), 0)
+	if fm := readFrontmatter(t, itemPath(root, "cli", 2, "b")); fm["claimed-by"] != "" {
 		t.Fatalf("unblock --release must drop the claim: %v", fm)
 	}
 }
@@ -194,31 +194,32 @@ func TestReleaseDropsClaim(t *testing.T) {
 // untouched; unblock resumes the same claim.
 func TestBlockKeepsNote(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "b", withField(claimedFields("B", "cli"), "note", "keep me"), "")
-	wantExit(t, runIn(t, root, "backlog", "block", "b", "escalated: q.md"), 0)
-	path := itemPath(root, "cli", "b")
+	writeItem(t, root, "cli", 1, "b", withField(claimedFields("B", "cli"), "note", "keep me"), "")
+	wantExit(t, runIn(t, root, "backlog", "block", key(1), "escalated: q.md"), 0)
+	path := itemPath(root, "cli", 1, "b")
 	fm := readFrontmatter(t, path)
 	if fm["note"] != "keep me" {
 		t.Fatalf("block clobbered note: %q", fm["note"])
 	}
 	wantContains(t, readAll(t, path), "block by", "Log")
 	wantContains(t, readAll(t, path), "escalated: q.md", "Log reason")
-	wantExit(t, runIn(t, root, "backlog", "unblock", "b"), 0)
+	wantExit(t, runIn(t, root, "backlog", "unblock", key(1)), 0)
 	if fm := readFrontmatter(t, path); fm["status"] != "in-progress" || fm["claimed-by"] != "worker-a" {
 		t.Fatalf("unblock: %v", fm)
 	}
-	wantExit(t, runIn(t, root, "backlog", "block", "b"), 2)
+	wantExit(t, runIn(t, root, "backlog", "block", key(1)), 2)
 }
 
 // TestTriageAppliesFieldSet covers §6.3: hint stripped, triaged-at stamped,
-// optional keys applied, --triage-note under ## Triage.
+// optional keys applied, --triage-note under ## Triage. The move into the
+// workstream dir keeps the filename.
 func TestTriageAppliesFieldSet(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "intake", "t", withField(newFields("T"), "hint", "dev"), "")
-	r := runIn(t, root, "backlog", "triage", "t", "workstream=dev", "summary=does a thing", "change-type=doc",
+	writeItem(t, root, "intake", 1, "t", withField(newFields("T"), "hint", "dev"), "")
+	r := runIn(t, root, "backlog", "triage", key(1), "workstream=dev", "summary=does a thing", "change-type=doc",
 		"risk=additive", "verify=none", "disposition=design", "priority=high", "--triage-note", "needs a spec first")
 	wantExit(t, r, 0)
-	path := itemPath(root, "dev", "t")
+	path := itemPath(root, "dev", 1, "t")
 	fm := readFrontmatter(t, path)
 	if fm["status"] != "triaged" || fm["workstream"] != "dev" || fm["priority"] != "high" ||
 		fm["triaged-at"] == "" || fm["hint"] != "" || fm["disposition"] != "design" {
@@ -235,8 +236,8 @@ func TestTriageAppliesFieldSet(t *testing.T) {
 func TestTriageRefusals(t *testing.T) {
 	root := mkTree(t)
 	writeRaw(t, filepath.Join(backlogDir(root), "workstreams.md"),
-		"---\nschema: 2\nsweep-order: bugs, cli, dev, process\nnever-auto-change-types: design\n---\n")
-	writeItem(t, root, "intake", "t", newFields("T"), "")
+		"---\nschema: 3\nkey-prefix: "+testPrefix+"\nsweep-order: bugs, cli, dev, process\nnever-auto-change-types: design\n---\n")
+	writeItem(t, root, "intake", 1, "t", newFields("T"), "")
 	full := []string{"workstream=cli", "summary=s", "change-type=doc", "risk=additive", "verify=go test", "disposition=auto"}
 	cases := map[string][]string{
 		"missing summary":  {"workstream=cli", "change-type=doc", "risk=additive", "verify=go test", "disposition=auto"},
@@ -248,11 +249,11 @@ func TestTriageRefusals(t *testing.T) {
 		"bad enum":         append(append([]string{}, full[:5]...), "disposition=AUTO"),
 	}
 	for name, pairs := range cases {
-		r := runIn(t, root, append([]string{"backlog", "triage", "t"}, pairs...)...)
+		r := runIn(t, root, append([]string{"backlog", "triage", key(1)}, pairs...)...)
 		if r.exit != 3 {
 			t.Fatalf("%s: exit = %d, want 3\n%s", name, r.exit, r.stderr)
 		}
-		wantFilePresent(t, itemPath(root, "intake", "t"))
+		wantFilePresent(t, itemPath(root, "intake", 1, "t"))
 	}
 }
 
@@ -261,21 +262,21 @@ func TestTriageRefusals(t *testing.T) {
 // --by or ANTHILL_ACTOR.
 func TestDeliverClaimantOnly(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "d", claimedFields("D", "cli"), "")
-	path := itemPath(root, "cli", "d")
-	wantExit(t, runIn(t, root, "backlog", "deliver", "d", "--evidence", "x", "--by", "worker-b"), 6)
-	wantExit(t, runEnv(t, root, []string{"ANTHILL_ACTOR=worker-b"}, "backlog", "deliver", "d", "--evidence", "x"), 6)
+	writeItem(t, root, "cli", 1, "d", claimedFields("D", "cli"), "")
+	path := itemPath(root, "cli", 1, "d")
+	wantExit(t, runIn(t, root, "backlog", "deliver", key(1), "--evidence", "x", "--by", "worker-b"), 6)
+	wantExit(t, runEnv(t, root, []string{"ANTHILL_ACTOR=worker-b"}, "backlog", "deliver", key(1), "--evidence", "x"), 6)
 	if fm := readFrontmatter(t, path); fm["status"] != "in-progress" {
 		t.Fatalf("refused deliver changed status: %v", fm)
 	}
-	wantExit(t, runIn(t, root, "backlog", "deliver", "d", "--evidence", "x", "--by", "worker-b", "--force"), 0)
+	wantExit(t, runIn(t, root, "backlog", "deliver", key(1), "--evidence", "x", "--by", "worker-b", "--force"), 0)
 	wantContains(t, readAll(t, path), "deliver (forced) by worker-b", "forced deliver Log")
 
-	writeItem(t, root, "cli", "e", claimedFields("E", "cli"), "")
-	r := runEnv(t, root, []string{"ANTHILL_ACTOR=worker-a"}, "backlog", "deliver", "e", "--evidence", "go test ./... exit 0")
+	writeItem(t, root, "cli", 2, "e", claimedFields("E", "cli"), "")
+	r := runEnv(t, root, []string{"ANTHILL_ACTOR=worker-a"}, "backlog", "deliver", key(2), "--evidence", "go test ./... exit 0")
 	wantExit(t, r, 0)
-	body := readAll(t, itemPath(root, "cli", "e"))
-	fm := readFrontmatter(t, itemPath(root, "cli", "e"))
+	body := readAll(t, itemPath(root, "cli", 2, "e"))
+	fm := readFrontmatter(t, itemPath(root, "cli", 2, "e"))
 	if fm["status"] != "validation" || fm["delivered-at"] == "" {
 		t.Fatalf("deliver frontmatter: %v", fm)
 	}
@@ -288,12 +289,12 @@ func TestDeliverClaimantOnly(t *testing.T) {
 // evidence.
 func TestDeliverEvidenceFileAndUsage(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "d", claimedFields("D", "cli"), "")
-	wantExit(t, runIn(t, root, "backlog", "deliver", "d", "--by", "worker-a"), 2)
+	writeItem(t, root, "cli", 1, "d", claimedFields("D", "cli"), "")
+	wantExit(t, runIn(t, root, "backlog", "deliver", key(1), "--by", "worker-a"), 2)
 	ev := filepath.Join(t.TempDir(), "ev.txt")
 	writeRaw(t, ev, "artifact: build.log\n")
-	wantExit(t, runIn(t, root, "backlog", "deliver", "d", "--by", "worker-a", "--evidence-file", ev), 0)
-	wantContains(t, readAll(t, itemPath(root, "cli", "d")), "artifact: build.log", "evidence file content")
+	wantExit(t, runIn(t, root, "backlog", "deliver", key(1), "--by", "worker-a", "--evidence-file", ev), 0)
+	wantContains(t, readAll(t, itemPath(root, "cli", 1, "d")), "artifact: build.log", "evidence file content")
 }
 
 // TestDispatchVerbs covers approve / fast-track / unapprove (§6.4): multiple
@@ -301,38 +302,38 @@ func TestDeliverEvidenceFileAndUsage(t *testing.T) {
 // on unknown ids.
 func TestDispatchVerbs(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "intake", "a", newFields("A"), "")
-	writeItem(t, root, "cli", "b", withField(readyFields("B", "cli"), "dispatch", "proposed"), "")
-	wantExit(t, runIn(t, root, "backlog", "approve", "a", "b"), 0)
-	for _, p := range []string{itemPath(root, "intake", "a"), itemPath(root, "cli", "b")} {
+	writeItem(t, root, "intake", 1, "a", newFields("A"), "")
+	writeItem(t, root, "cli", 2, "b", withField(readyFields("B", "cli"), "dispatch", "proposed"), "")
+	wantExit(t, runIn(t, root, "backlog", "approve", key(1), key(2)), 0)
+	for _, p := range []string{itemPath(root, "intake", 1, "a"), itemPath(root, "cli", 2, "b")} {
 		if fm := readFrontmatter(t, p); fm["dispatch"] != "approved" {
 			t.Fatalf("%s dispatch = %q", p, fm["dispatch"])
 		}
 		wantContains(t, readAll(t, p), "approve by", "Log")
 	}
-	if fm := readFrontmatter(t, itemPath(root, "intake", "a")); fm["status"] != "new" {
+	if fm := readFrontmatter(t, itemPath(root, "intake", 1, "a")); fm["status"] != "new" {
 		t.Fatalf("approve must not change status: %v", fm)
 	}
-	wantExit(t, runIn(t, root, "backlog", "fast-track", "a"), 0)
-	if fm := readFrontmatter(t, itemPath(root, "intake", "a")); fm["dispatch"] != "fast-tracked" {
+	wantExit(t, runIn(t, root, "backlog", "fast-track", key(1)), 0)
+	if fm := readFrontmatter(t, itemPath(root, "intake", 1, "a")); fm["dispatch"] != "fast-tracked" {
 		t.Fatalf("fast-track: %v", fm)
 	}
-	wantExit(t, runIn(t, root, "backlog", "unapprove", "a"), 0)
-	if fm := readFrontmatter(t, itemPath(root, "intake", "a")); fm["dispatch"] != "proposed" {
+	wantExit(t, runIn(t, root, "backlog", "unapprove", key(1)), 0)
+	if fm := readFrontmatter(t, itemPath(root, "intake", 1, "a")); fm["dispatch"] != "proposed" {
 		t.Fatalf("unapprove: %v", fm)
 	}
-	// Unknown id: nothing written.
-	wantExit(t, runIn(t, root, "backlog", "approve", "a", "ghost"), 4)
-	if fm := readFrontmatter(t, itemPath(root, "intake", "a")); fm["dispatch"] != "proposed" {
+	// Unknown (slug-shaped) id: nothing written.
+	wantExit(t, runIn(t, root, "backlog", "approve", key(1), "ghost"), 4)
+	if fm := readFrontmatter(t, itemPath(root, "intake", 1, "a")); fm["dispatch"] != "proposed" {
 		t.Fatalf("approve with an unknown id must write nothing: %v", fm)
 	}
 	// Archived item: refused.
-	writeAtStatus(t, root, "old", "done")
-	wantExit(t, runIn(t, root, "backlog", "approve", "old"), 6)
+	writeAtStatus(t, root, 3, "old", "done")
+	wantExit(t, runIn(t, root, "backlog", "approve", key(3)), 6)
 	// Legacy --yes is accepted.
-	wantExit(t, runIn(t, root, "backlog", "approve", "a", "--yes"), 0)
+	wantExit(t, runIn(t, root, "backlog", "approve", key(1), "--yes"), 0)
 	// --json is an array.
-	r := runIn(t, root, "--json", "backlog", "fast-track", "a", "b")
+	r := runIn(t, root, "--json", "backlog", "fast-track", key(1), key(2))
 	wantExit(t, r, 0)
 	if arr := jsonArr(t, r.stdout); len(arr) != 2 || arr[0]["dispatch"] != "fast-tracked" {
 		t.Fatalf("json = %s", r.stdout)
@@ -343,33 +344,36 @@ func TestDispatchVerbs(t *testing.T) {
 // verify, and its absence for each missing condition.
 func TestDispatchMakesReady(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "r", withField(readyFields("R", "cli"), "dispatch", "proposed"), "")
+	writeItem(t, root, "cli", 1, "r", withField(readyFields("R", "cli"), "dispatch", "proposed"), "")
 	ready := func() any {
-		r := runIn(t, root, "--json", "backlog", "show", "r")
+		r := runIn(t, root, "--json", "backlog", "show", key(1))
 		wantExit(t, r, 0)
 		return jsonObj(t, r.stdout)["ready"]
 	}
 	if ready() != false {
 		t.Fatal("proposed item must not be ready")
 	}
-	wantExit(t, runIn(t, root, "backlog", "approve", "r"), 0)
+	wantExit(t, runIn(t, root, "backlog", "approve", key(1)), 0)
 	if ready() != true {
 		t.Fatal("approved auto item with verify must be ready")
 	}
-	wantExit(t, runIn(t, root, "backlog", "set", "r", "disposition=interactive"), 0)
+	wantExit(t, runIn(t, root, "backlog", "set", key(1), "disposition=interactive"), 0)
 	if ready() != false {
 		t.Fatal("interactive item must not be ready")
 	}
 }
 
 // TestNewFlags covers --summary, --description(-file), --priority, --reporter
-// and the reporter precedence (§4).
+// and the reporter precedence (§4). A fresh tree allocates ANT-1, ANT-2, ….
 func TestNewFlags(t *testing.T) {
 	root := mkTree(t)
 	r := runIn(t, root, "backlog", "new", "--title", "Rich", "--value", "v", "--summary", "short",
 		"--description", "the long brief", "--priority", "low", "--reporter", "supervisor")
 	wantExit(t, r, 0)
-	path := itemPath(root, "intake", "rich")
+	if got := strings.TrimSpace(r.stdout); got != key(1) {
+		t.Fatalf("new stdout = %q, want %s", got, key(1))
+	}
+	path := itemPath(root, "intake", 1, "rich")
 	fm := readFrontmatter(t, path)
 	if fm["summary"] != "short" || fm["priority"] != "low" || fm["reporter"] != "supervisor" {
 		t.Fatalf("new flags: %v", fm)
@@ -382,7 +386,7 @@ func TestNewFlags(t *testing.T) {
 	desc := filepath.Join(t.TempDir(), "d.md")
 	writeRaw(t, desc, "from a file\n")
 	wantExit(t, runIn(t, root, "backlog", "new", "--title", "Filed", "--value", "v", "--description-file", desc), 0)
-	wantContains(t, readAll(t, itemPath(root, "intake", "filed")), "from a file", "description file")
+	wantContains(t, readAll(t, itemPath(root, "intake", 2, "filed")), "from a file", "description file")
 	wantExit(t, runIn(t, root, "backlog", "new", "--title", "X", "--value", "v", "--description", "a", "--description-file", desc), 2)
 	wantExit(t, runIn(t, root, "backlog", "new", "--title", "X", "--value", "v", "--priority", "urgent"), 2)
 	wantExit(t, runIn(t, root, "backlog", "new", "--title", "X", "--value", "v", "--reporter", "robot"), 2)
@@ -413,8 +417,8 @@ func TestNewFlags(t *testing.T) {
 // TestShowFindsArchivedItems covers show resolving ids in done/ and discarded/.
 func TestShowFindsArchivedItems(t *testing.T) {
 	root := mkTree(t)
-	writeAtStatus(t, root, "gone", "done")
-	r := runIn(t, root, "--json", "backlog", "show", "gone")
+	writeAtStatus(t, root, 1, "gone", "done")
+	r := runIn(t, root, "--json", "backlog", "show", key(1))
 	wantExit(t, r, 0)
 	if obj := jsonObj(t, r.stdout); obj["status"] != "done" || obj["active"] != false {
 		t.Fatalf("show archived = %v", obj)

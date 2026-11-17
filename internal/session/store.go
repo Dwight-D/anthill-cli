@@ -335,6 +335,35 @@ func (s *Store) Prune(olderThan time.Duration, dryRun bool) (*PruneResult, error
 	return res, nil
 }
 
+// RewriteItems points every record whose item is a key of mapping at the
+// mapped value (a backlog migration or renumber). dryRun reports without
+// writing. It returns one line per record: "<key>.json: item <old> → <new>".
+func (s *Store) RewriteItems(mapping map[string]string, dryRun bool) ([]string, error) {
+	if len(mapping) == 0 {
+		return nil, nil
+	}
+	recs, err := s.List()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, r := range recs {
+		to, ok := mapping[r.Item]
+		if !ok || to == r.Item {
+			continue
+		}
+		out = append(out, fmt.Sprintf("sessions/%s.json: item %s → %s", r.Key(), r.Item, to))
+		if dryRun {
+			continue
+		}
+		r.Item = to
+		if err := s.save(r); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
 func stamp() string { return now().Format(time.RFC3339) }
 
 // save writes rec atomically, creating the directory and its .gitignore on

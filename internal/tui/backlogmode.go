@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/lipgloss"
+
 	"github.com/Dwight-D/anthill-cli/internal/backlog"
 )
 
@@ -43,25 +45,32 @@ func (b *BacklogMode) Len() int { return len(b.items) }
 // RowID implements Mode.
 func (b *BacklogMode) RowID(i int) string { return b.items[i].ID }
 
-// List column widths (cells) for the fixed columns; the id column flexes.
+// List column widths (cells) for the fixed columns; the title column flexes.
 const (
 	wsColW     = 10
 	statusColW = 11
 	minIDColW  = 8
+	idColW     = 10
 )
 
-// Row implements Mode: "id  workstream  status" columns fitted to width.
+// Row implements Mode: "id  title  workstream  status" columns fitted to
+// width. The id is the item key (`ANT-74`); the title keeps the row readable.
 func (b *BacklogMode) Row(i, width int) string {
 	it := b.items[i]
 	ws := it.Workstream
 	if ws == "" {
 		ws = "intake"
 	}
-	idW := width - wsColW - statusColW - 2
-	if idW < minIDColW {
-		idW = minIDColW
+	idW := idColW
+	if w := lipgloss.Width(it.ID); w > idW {
+		idW = w
 	}
-	line := padCells(it.ID, idW) + " " + padCells(ws, wsColW) + " " + truncateCells(it.Status, statusColW)
+	titleW := width - idW - wsColW - statusColW - 3
+	if titleW < minIDColW {
+		titleW = minIDColW
+	}
+	line := padCells(it.ID, idW) + " " + padCells(it.Title, titleW) + " " +
+		padCells(ws, wsColW) + " " + truncateCells(it.Status, statusColW)
 	return truncateCells(line, width)
 }
 

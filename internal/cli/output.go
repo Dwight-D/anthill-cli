@@ -36,6 +36,7 @@ type itemView struct {
 	Session     string `json:"session,omitempty"`
 	DeliveredAt string `json:"delivered-at,omitempty"`
 	ClosedAt    string `json:"closed-at,omitempty"`
+	FormerID    string `json:"former-id,omitempty"`
 	Path        string `json:"path"`
 	Ready       bool   `json:"ready"`
 	Active      bool   `json:"active"`
@@ -67,6 +68,7 @@ func viewItem(it *backlog.Item, withBody bool) itemView {
 		Session:     it.Session,
 		DeliveredAt: it.DeliveredAt,
 		ClosedAt:    it.ClosedAt,
+		FormerID:    it.FormerID,
 		Path:        it.Path,
 		Ready:       it.Ready(),
 		Active:      it.Active(),

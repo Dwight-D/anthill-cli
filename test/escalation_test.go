@@ -264,7 +264,13 @@ func TestEscalationRemoveNotFound(t *testing.T) {
 // apply lifecycle end to end (spec §3.9–3.13).
 func TestEscalationLifecycle(t *testing.T) {
 	root := mkTree(t)
-	id := raiseOne(t, root, "Full lifecycle question", "--item", "some-item")
+	// --item must resolve to a backlog item (ITEM_KEYS_SPEC.md §3.4); the
+	// record stores the canonical key whatever reference form was given.
+	writeItem(t, root, "cli", 1, "escalated-item", claimedFields("Escalated item", "cli"), "")
+	wantExit(t, runIn(t, root, "escalation", "raise", "--to", "user", "--from", "worker", "--question", "q", "--item", "some-item"), 4)
+	wantExit(t, runIn(t, root, "escalation", "raise", "--to", "user", "--from", "worker", "--question", "q", "--item", "../x"), 2)
+	id := raiseOne(t, root, "Full lifecycle question", "--item", "1")
+	wantContains(t, readAll(t, escalDir(root)+"/"+id+".md"), "item: ANT-1\n", "record stores the canonical key")
 
 	// list shows it open
 	l := runIn(t, root, "--json", "escalation", "list", "--status", "open")
