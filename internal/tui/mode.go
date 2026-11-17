@@ -17,6 +17,8 @@
 // operation (the TUI is a viewport onto the verbs, never a privileged path).
 package tui
 
+import "time"
+
 // Mode is one top-level screen of the TUI. Implementations hold their own
 // domain handles (stores) and backing data; the root model drives them through
 // this interface only.
@@ -61,4 +63,20 @@ type Action struct {
 	// DoInput performs an Input action on row i with the overlay's submitted
 	// text (never empty). Same contract as Do otherwise.
 	DoInput func(i int, text string) (string, error)
+}
+
+// Poller is an optional Mode extension. While a mode implementing it is
+// active, the root reloads it every PollInterval via tea.Tick; ticks are
+// dropped once another mode is selected, so non-polling modes never reload
+// on a timer.
+type Poller interface {
+	PollInterval() time.Duration
+}
+
+// Board is an optional Mode extension requesting the single-pane layout: the
+// rows span the full width, framed by the lines BoardLines returns above and
+// below them (column headings, summary blocks, counts). enter swaps the board
+// for the selected row's full-width detail; esc returns to the board.
+type Board interface {
+	BoardLines(width int) (top, bottom []string)
 }

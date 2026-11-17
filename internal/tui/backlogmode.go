@@ -67,8 +67,11 @@ func (b *BacklogMode) Row(i, width int) string {
 
 // Detail implements Mode: the item's frontmatter fields followed by its body,
 // mirroring `backlog show`.
-func (b *BacklogMode) Detail(i int) string {
-	it := b.items[i]
+func (b *BacklogMode) Detail(i int) string { return itemDetail(b.items[i]) }
+
+// itemDetail renders an item's frontmatter fields followed by its body, the
+// detail text shared by every mode that shows backlog items.
+func itemDetail(it *backlog.Item) string {
 	var sb strings.Builder
 	field := func(label, val string) {
 		if val != "" {

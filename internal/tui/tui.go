@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/Dwight-D/anthill-cli/internal/backlog"
 	"github.com/Dwight-D/anthill-cli/internal/escalation"
+	"github.com/Dwight-D/anthill-cli/internal/session"
 )
 
 // Reserved band heights: header (mode line + hints line) and status line are
@@ -32,6 +34,10 @@ const (
 
 // reloadMsg asks the root to reload the active mode's data.
 type reloadMsg struct{}
+
+// tickMsg is a polling mode's timer firing. gen ties it to the mode
+// activation that scheduled it; a tick from an earlier activation is dropped.
+type tickMsg struct{ gen int }
 
 // pendingConfirm is an armed destructive action awaiting a y keypress.
 type pendingConfirm struct {
@@ -60,6 +66,8 @@ type Model struct {
 	statusErr bool
 	confirm   *pendingConfirm
 	overlay   *textOverlay // nil = no text-entry overlay open
+
+	tickGen int // bumped on every mode switch; stale tickMsgs are dropped
 }
 
 // New builds the root model for the installation rooted at root (the
@@ -69,6 +77,7 @@ func New(root string) Model {
 	return NewWithModes([]Mode{
 		NewBacklogMode(backlog.NewStore(root)),
 		NewEscalationsMode(escalation.NewStore(root)),
+		NewNowMode(backlog.NewStore(root), session.NewStore(root)),
 	})
 }
 
@@ -82,9 +91,27 @@ func NewWithModes(modes []Mode) Model {
 
 func (m Model) mode() Mode { return m.modes[m.modeIdx] }
 
-// Init implements tea.Model: trigger the initial load.
+// Init implements tea.Model: trigger the initial load, and start polling if
+// the first mode polls.
 func (m Model) Init() tea.Cmd {
-	return func() tea.Msg { return reloadMsg{} }
+	return tea.Batch(func() tea.Msg { return reloadMsg{} }, m.pollCmd())
+}
+
+// pollCmd schedules the active mode's next poll tick, or nil when the mode
+// does not poll.
+func (m Model) pollCmd() tea.Cmd {
+	p, ok := m.mode().(Poller)
+	if !ok {
+		return nil
+	}
+	gen := m.tickGen
+	return tea.Tick(p.PollInterval(), func(time.Time) tea.Msg { return tickMsg{gen: gen} })
+}
+
+// singlePane reports whether the active mode requested the Board layout.
+func (m Model) singlePane() bool {
+	_, ok := m.mode().(Board)
+	return ok
 }
 
 // reload refreshes the active mode from disk, preserving the selection by row
@@ -127,10 +154,12 @@ func (m *Model) reload() {
 // the wrap always matches the live pane width.
 func (m *Model) refreshDetail() {
 	if m.mode().Len() == 0 {
+		m.viewport.Width = m.detailInnerW()
 		m.viewport.SetContent("no items")
 		return
 	}
-	m.viewport.SetContent(wrapCells(m.mode().Detail(m.selected), m.leftInnerW()))
+	m.viewport.Width = m.detailInnerW()
+	m.viewport.SetContent(wrapCells(m.mode().Detail(m.selected), m.detailInnerW()))
 }
 
 func (m *Model) setStatus(s string, isErr bool) {
@@ -175,11 +204,21 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.setStatus(msg.text, msg.isErr)
 		return m, nil
 
+	case tickMsg:
+		if msg.gen != m.tickGen {
+			return m, nil // scheduled by an earlier mode activation
+		}
+		// Never reload under an open prompt: its row index must stay valid.
+		if m.overlay == nil && m.confirm == nil {
+			m.reload()
+		}
+		return m, m.pollCmd()
+
 	case tea.WindowSizeMsg:
 		widthChanged := msg.Width != m.width
 		m.width, m.height = msg.Width, msg.Height
 		m.sizeReady = true
-		m.viewport.Width = m.leftInnerW()
+		m.viewport.Width = m.detailInnerW()
 		m.viewport.Height = m.innerH()
 		if widthChanged {
 			saved := m.viewport.YOffset
@@ -219,7 +258,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		switch msg.String() {
+		k := msg.String()
+		if !rootReservedKey(k) {
+			for _, act := range m.mode().Actions() {
+				if k == act.Key {
+					return m.triggerAction(act)
+				}
+			}
+		}
+
+		switch k {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "tab":
@@ -240,8 +288,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setStatus("refreshed", false)
 			return m, nil
 		case "m":
-			m.switchMode((m.modeIdx + 1) % len(m.modes))
-			return m, nil
+			return m, m.switchMode((m.modeIdx + 1) % len(m.modes))
 		case "up", "k":
 			if m.focus == focusList {
 				if m.selected > 0 {
@@ -260,31 +307,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		default:
 			// Number keys select a mode directly.
-			if n := int(msg.String()[0] - '1'); len(msg.String()) == 1 && n >= 0 && n < len(m.modes) {
-				m.switchMode(n)
-				return m, nil
-			}
-			// Mode action keys.
-			for _, act := range m.mode().Actions() {
-				if msg.String() != act.Key {
-					continue
-				}
-				if m.mode().Len() == 0 {
-					m.setStatus("no items", true)
-					return m, nil
-				}
-				if act.Input {
-					m.overlay = newTextOverlay(act, m.selected, m.mode().RowID(m.selected), m.width, m.innerH())
-					return m, textarea.Blink
-				}
-				if act.Confirm {
-					id := m.mode().RowID(m.selected)
-					m.confirm = &pendingConfirm{action: act, index: m.selected, rowID: id}
-					m.setStatus(fmt.Sprintf("%s %s? [y] confirm  [any other key] cancel", act.Label, id), false)
-					return m, nil
-				}
-				m.runAction(act, m.selected)
-				return m, nil
+			if n := int(k[0] - '1'); len(k) == 1 && n >= 0 && n < len(m.modes) {
+				return m, m.switchMode(n)
 			}
 		}
 	}
@@ -304,16 +328,52 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// switchMode activates mode idx, resetting selection and reloading.
-func (m *Model) switchMode(idx int) {
+// rootReservedKey reports whether k is a root key no mode action may shadow:
+// quit, pane focus, mode switching. Every other root key (refresh, j/k
+// movement) yields to a mode action bound to the same key.
+func rootReservedKey(k string) bool {
+	switch k {
+	case "ctrl+c", "q", "tab", "enter", "esc", "m":
+		return true
+	}
+	return len(k) == 1 && k[0] >= '1' && k[0] <= '9'
+}
+
+// triggerAction runs a mode action on the selected row: free-text actions
+// open the overlay, confirm-gated ones arm the prompt, plain ones run now.
+func (m Model) triggerAction(act Action) (tea.Model, tea.Cmd) {
+	if m.mode().Len() == 0 {
+		m.setStatus("no items", true)
+		return m, nil
+	}
+	if act.Input {
+		m.overlay = newTextOverlay(act, m.selected, m.mode().RowID(m.selected), m.width, m.innerH())
+		return m, textarea.Blink
+	}
+	if act.Confirm {
+		id := m.mode().RowID(m.selected)
+		m.confirm = &pendingConfirm{action: act, index: m.selected, rowID: id}
+		m.setStatus(fmt.Sprintf("%s %s? [y] confirm  [any other key] cancel", act.Label, id), false)
+		return m, nil
+	}
+	m.runAction(act, m.selected)
+	return m, nil
+}
+
+// switchMode activates mode idx, resetting selection and reloading. It
+// returns the new mode's first poll tick (nil for a non-polling mode); the
+// generation bump orphans any tick the previous mode had scheduled.
+func (m *Model) switchMode(idx int) tea.Cmd {
 	if idx == m.modeIdx || idx < 0 || idx >= len(m.modes) {
-		return
+		return nil
 	}
 	m.modeIdx = idx
+	m.tickGen++
 	m.selected = 0
 	m.focus = focusList
 	m.setStatus("", false)
 	m.reload()
+	return m.pollCmd()
 }
 
 // ---- derived dimensions (pure, recomputed each frame) ----
@@ -338,6 +398,18 @@ func (m Model) rightInnerW() int {
 	return w
 }
 
+// detailInnerW is the detail viewport's inner width: the left pane in the
+// two-pane layout, the full width (minus borders) in the single-pane layout.
+func (m Model) detailInnerW() int {
+	if !m.singlePane() {
+		return m.leftInnerW()
+	}
+	if w := m.width - 2; w >= 4 {
+		return w
+	}
+	return 4
+}
+
 // innerH is the main-area inner height: total minus the reserved bands and
 // the pane borders.
 func (m Model) innerH() int {
@@ -355,7 +427,15 @@ func (m Model) View() string {
 	if !m.sizeReady {
 		return "loading..."
 	}
-	main := lipgloss.JoinHorizontal(lipgloss.Top, m.renderDetailPane(), m.renderListPane())
+	var main string
+	switch {
+	case m.singlePane() && m.focus == focusDetail:
+		main = m.renderDetailPane()
+	case m.singlePane():
+		main = m.renderBoard()
+	default:
+		main = lipgloss.JoinHorizontal(lipgloss.Top, m.renderDetailPane(), m.renderListPane())
+	}
 	if m.overlay != nil {
 		// The overlay replaces the main area, centered in the same band so
 		// the header and status line never shift.
@@ -382,7 +462,13 @@ func (m Model) renderHeader() string {
 		// An open overlay swaps the whole hint string for its own keys.
 		hints = m.overlay.title + "  ·  [ctrl+s] submit  [esc] cancel"
 	} else {
-		hints = "[tab] switch pane  [↑↓] move  [enter] open  [r] refresh"
+		hints = "[tab] switch pane  [↑↓] move  [enter] open"
+		if m.singlePane() {
+			hints = "[↑↓] move  [enter] show  [esc] back"
+		}
+		if !m.modeBinds("r") {
+			hints += "  [r] refresh"
+		}
 		if len(m.modes) > 1 {
 			hints += "  [m] mode"
 		}
@@ -405,9 +491,48 @@ func (m Model) renderDetailPane() string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(borderCol).
-		Width(m.leftInnerW()).
+		Width(m.detailInnerW()).
 		Height(m.innerH()).
 		Render(m.viewport.View())
+}
+
+// modeBinds reports whether the active mode binds key to an action.
+func (m Model) modeBinds(key string) bool {
+	for _, act := range m.mode().Actions() {
+		if act.Key == key {
+			return true
+		}
+	}
+	return false
+}
+
+// renderBoard draws the single-pane layout: the mode's top lines, its rows
+// (selection-marked and scrolled), then its bottom lines, in one full-width
+// bordered pane.
+func (m Model) renderBoard() string {
+	w := m.width - 2
+	if w < 4 {
+		w = 4
+	}
+	top, bottom := m.mode().(Board).BoardLines(w)
+	h := m.innerH() - len(top) - len(bottom)
+	if h < 1 {
+		h = 1
+	}
+	var lines []string
+	for _, l := range top {
+		lines = append(lines, truncateCells(l, w))
+	}
+	lines = append(lines, m.renderRows(w, h)...)
+	for _, l := range bottom {
+		lines = append(lines, truncateCells(l, w))
+	}
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(m.styles.active).
+		Width(w).
+		Height(m.innerH()).
+		Render(strings.Join(lines, "\n"))
 }
 
 // renderListPane draws the right nav pane: the mode's rows, hand-rolled, with
@@ -418,7 +543,17 @@ func (m Model) renderListPane() string {
 		borderCol = m.styles.active
 	}
 	w, h := m.rightInnerW(), m.innerH()
+	return lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(borderCol).
+		Width(w).
+		Height(h).
+		Render(strings.Join(m.renderRows(w, h), "\n"))
+}
 
+// renderRows renders at most h of the mode's rows at width w, with the
+// selection marker and a window scrolled to keep the selection visible.
+func (m Model) renderRows(w, h int) []string {
 	n := m.mode().Len()
 	top := 0
 	if m.selected >= h {
@@ -443,12 +578,7 @@ func (m Model) renderListPane() string {
 	if n == 0 {
 		lines = []string{m.styles.dim.Render("no items")}
 	}
-	return lipgloss.NewStyle().
-		Border(lipgloss.RoundedBorder()).
-		BorderForeground(borderCol).
-		Width(w).
-		Height(h).
-		Render(strings.Join(lines, "\n"))
+	return lines
 }
 
 // renderStatus draws the one-line status bar.
