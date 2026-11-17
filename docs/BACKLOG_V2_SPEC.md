@@ -209,11 +209,37 @@ ledger the CLI owns:
 .anthill/sessions/<session-id>[.<agent-id>].json      (untracked)
 { "session": "…", "agent": "<agent id or empty>", "handle": "cli-worker",
   "item": "<id>", "role": "worker", "transcript": "<path>", "cwd": "…",
-  "started": "…", "last-seen": "…" }
+  "started": "…", "last-seen": "…", "verb": "<last backlog verb, optional>" }
 ```
 
 Written by `anthill session link` and refreshed by `anthill session touch`,
-both called from the Claude Code side (§8.2), never by the skills. Transcript
+both called from the Claude Code side (§8.2), never by the skills. The
+backlog verbs keep the ledger current without any hook: `claim` creates or
+updates the record of its session (`--session`, else
+`CLAUDE_CODE_SESSION_ID`) with the item, `claimed-by` as handle, and the
+reporter-style role; `deliver`, `close`, `block`, and `release` bump
+`last-seen` (and `verb`) on the records of the caller's session
+(`CLAUDE_CODE_SESSION_ID`, else the item's `session`) that name the item, and
+write nothing when none exists. A ledger failure never fails the backlog verb.
+
+Session verbs:
+
+```
+anthill session link --session <id> [--agent <id>] --item <id> [--handle h]
+                     [--role user|supervisor|worker] [--transcript p] [--cwd d]
+                     [--verb claim|deliver|close|block|release]
+anthill session touch --session <id> [--agent <id>]
+anthill session list [--item <id>] [--active]
+anthill session prune [--older-than <dur|Nd>] [--dry-run]
+```
+
+`link` creates the record (stamping `started`) or updates it, overwriting
+only the fields given, and always stamps `last-seen`; an `--item` that does
+not exist exits 4. Session and agent ids are limited to letters, digits, `-`
+and `_` (they form the filename). `touch` on a missing record exits 4.
+`list --active` keeps records whose item is active (in-progress or
+validation). `prune` deletes records whose liveness (below) is older than
+`--older-than`, default `7d`. Transcript
 locations, verified 2026-11-17: a session's transcript is
 `~/.claude/projects/<cwd-slug>/<session_id>.jsonl`; its subagents' are
 `<session_id>/subagents/agent-<agentId>.jsonl` next to it, with a
@@ -355,11 +381,16 @@ the claimant check on `deliver`.
 ### 8.1 TUI "Now" mode (`anthill` → mode 3)
 
 Single-pane board polled every 2 s (`tea.Tick` → reload): one row per
-active item — id · summary · status · claimed-by · session (short) ·
+active item — id · summary · status · claimed-by · session (first 8 chars) ·
 last-seen age · workstream; a second block for `validation` items awaiting a
-controller; a footer with counts (ready / proposed / blocked). Actions:
-`enter` show, `d` close --done (confirm), `j` close --reject (input),
-`r` release (confirm), `o` open transcript path in `$EDITOR`/`less`.
+controller; a footer with counts (ready / proposed / blocked). The age comes
+from the item's ledger record (the one of the item's `session` first, then
+the most recently seen): `last-seen`, else the recorded transcript's mtime,
+else `-`. Actions: `enter` shows the item full-width (`esc` returns),
+`d` close --done (confirm), `j` close --reject (input), `r` release
+(confirm), `o` prints the recorded transcript path in the status line. In
+this mode `r` and `j` are the actions above, not refresh and move-down (the
+board refreshes itself; the arrow keys move).
 
 ### 8.2 Claude Code plugin surface (`anthill-claude`)
 

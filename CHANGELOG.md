@@ -44,6 +44,27 @@ idempotently, and stamps `schema: 2` into `backlog/workstreams.md`; until
 then `validate` refuses the tree and points at `migrate`. Then run
 `anthill backlog validate` and complete the triage fields it lists.
 
+### Added — sessions ledger and the Now board
+
+- **`anthill session link|touch|list|prune`** maintain the runtime-only
+  ledger `.anthill/sessions/<session>[.<agent>].json` (untracked; the first
+  write adds a `.gitignore`) correlating harness sessions with the items they
+  work. `link --session --item [--agent --handle --role --transcript --cwd
+  --verb]` creates or updates a record and stamps `last-seen` (an unknown
+  item exits 4); `touch` bumps `last-seen`; `list [--item] [--active]`
+  shows session, agent, handle, item, role, last-seen age, and transcript;
+  `prune [--older-than <dur|Nd>] [--dry-run]` deletes records not seen
+  within the threshold (default `7d`). Every verb honours `--json`.
+- **`backlog claim` writes the ledger record itself** when a session is known
+  (`--session` or `CLAUDE_CODE_SESSION_ID`), so correlation needs no hook;
+  `deliver`, `close`, `block`, and `release` bump the caller's record for the
+  item when one exists.
+- **TUI Now mode** (`3`): a single-pane board of active items (id, summary,
+  status, claimed-by, session, last-seen age, workstream) refreshed every 2 s,
+  a block of `validation` items awaiting a controller, and ready / proposed /
+  blocked counts. `enter` shows the item, `d` closes it as done, `j` rejects
+  it with a reason, `r` releases it, `o` shows the transcript path.
+
 ## 0.0.10 — 2026-11-16
 
 ### Changed
