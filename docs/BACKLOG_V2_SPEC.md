@@ -1,11 +1,11 @@
 # Backlog v2 — task model, lifecycle, and CLI contract
 
-Status: **PROPOSED (draft 2026-11-17)** — awaiting the user's decisions listed in
-§10. Nothing here is implemented. Once accepted this document becomes the
-backlog contract that `anthill` (schema owner) enforces and the framework
+Status: **ACCEPTED 2026-11-17** (decisions recorded in §10). This document is
+the backlog contract that `anthill` (schema owner) enforces and the framework
 skills (`submit`, `triage`, `expedite`, `dispatch`, `dispatch-receive`,
 `dispatch-loop`, `escalate`, `supervisor`, `autonomous`, `rehydrate`) follow.
-The bootstrap contract (`anthill-fw/CLI_SPEC.md`) and the escalation record
+It supersedes `CLI_INTERFACE_SPEC.md` §3–4 for backlog verbs and schema. The
+bootstrap contract (`anthill-fw/CLI_SPEC.md`) and the escalation record
 contract (`CLI_INTERFACE_SPEC.md` §5) are unaffected.
 
 Design goals, in the user's words: work goes through the item with an
@@ -94,8 +94,14 @@ and `## Log`; it never rewrites prose.
   CHANGELOG.md            one line per closed item
   intake/                 status new, no workstream
   <workstream>/           triaged … validation, blocked, parked
-  closed/                 done and discarded items, kept for history (§10 D1)
+  done/                   status done; kept permanently (the project's history)
+  discarded/              status discarded; kept until purged by hand
 ```
+
+`done/` is never pruned. `discarded/` is purged only by an explicit
+`anthill backlog prune [--older-than <duration>] [--dry-run]`, which deletes
+discarded items (default: all of them) and writes one CHANGELOG line per
+deletion. `--remove` (filed in error) deletes immediately and never archives.
 
 ---
 
@@ -117,14 +123,14 @@ and `## Log`; it never rewrites prose.
 | `new` | `triaged` | `triage <id> workstream=… …` | required triage fields present (§6.3); moves the file into the workstream dir; stamps `triaged-at` |
 | `triaged` | `in-progress` | `claim` | `ready`, or `--force`; CAS on status; stamps `claimed-at`, `claimed-by`, `session` |
 | `in-progress` | `validation` | `deliver --evidence "…"` | claimant only unless `--force`; stamps `delivered-at`; appends Evidence |
-| `validation` | `done` | `close --done ["…"]` | controller/user; moves to `closed/`; stamps `closed-at`; CHANGELOG line |
+| `validation` | `done` | `close --done ["…"]` | controller/user; moves to `done/`; stamps `closed-at`; CHANGELOG line |
 | `validation` | `in-progress` | `close --reject "…"` | evidence insufficient; keeps claim; appends Log |
 | `in-progress` | `blocked` | `block "<reason>"` | reason appended to Log, `note` untouched |
 | `blocked` | `in-progress` | `unblock` | resumes the same claim; `--release` instead returns it to `triaged` |
 | `in-progress` | `triaged` | `release` | drops claim fields (worker died, item reassigned) |
 | `triaged`/`new` | `parked` | `park "<reason>"` | |
 | `parked` | prior status | `unpark` | |
-| any | `discarded` | `close --discard "…"` | moves to `closed/`; CHANGELOG line |
+| any | `discarded` | `close --discard "…"` | moves to `discarded/`; stamps `closed-at`; CHANGELOG line |
 | any | — | `close --remove "…"` | filed in error; file deleted; CHANGELOG line |
 
 Rules:
@@ -244,7 +250,8 @@ Filters, all repeatable and AND-ed: `--status`, `--dispatch`, `--disposition`,
 `--reporter`, `--priority`, `--workstream`, `--change-type`, `--risk`,
 `--claimed-by`, `--session`, `--search <substring over title/summary/value>`.
 Presets: `--ready` (derived), `--active` (in-progress + validation),
-`--untriaged` (status new), `--closed` (include `closed/`).
+`--untriaged` (status new), `--all` (also walk `done/` and `discarded/`,
+which the default listing skips).
 
 Sort keys: `rank` (default: fast-tracked → priority → workstream sweep-order
 → oldest first), `priority`, `age`, `updated`, `id`; `--reverse`.
@@ -299,6 +306,7 @@ anthill backlog set <id> key=value …    free fields only: title summary value 
 anthill backlog validate [--strict]     per-item violations, rule names, ids
 anthill doctor                           same rules, same listing (never a bare count)
 anthill backlog migrate [--dry-run]      v1 → v2 (§9), idempotent
+anthill backlog prune [--older-than d] [--dry-run]   purge discarded/ (manual, never automatic)
 anthill session link|touch|list|prune    §5
 ```
 
@@ -392,7 +400,7 @@ rules apply. Mapping:
 | `status: approved` | `status: triaged`, `dispatch: approved` |
 | `note` beginning with `expedited` | `dispatch: fast-tracked`; token removed from note |
 | `status: in-progress` / `blocked` / `parked` | unchanged status; `dispatch: approved` |
-| `status: done` (never stored in practice) | moved to `closed/` |
+| `status: done` (never stored in practice) | moved to `done/` |
 | `disposition: AUTO` | `auto` |
 | `disposition: REVIEW` | `auto` if `verify` is real and change-type is not never-auto, else `design` |
 | `disposition: DISCARD` | `open`, `dispatch: proposed` (nothing is deleted by migration) |
@@ -409,33 +417,22 @@ template (`sync` never touches `.anthill/`).
 
 ---
 
-## 10. Decisions needed from the user
+## 10. Decisions (recorded 2026-11-17, user)
 
-- **D1 Closed items: archive or delete?** Proposal: `closed/` keeps done and
-  discarded items with their Log and Evidence (history for the dashboard and
-  for "what did we do last month"); `--remove` still deletes. Alternative:
-  keep today's delete-on-close and rely on `CHANGELOG.md`.
-- **D2 Status set.** Proposal: `new · triaged · in-progress · validation ·
-  done · blocked · parked · discarded`. Alternative names: `validation` →
-  `review`.
-- **D3 Disposition names.** Proposal: `auto · design · interactive · open`.
-- **D4 Drop `value-verdict`.** Its three outcomes are now actions (triage /
-  park / discard) and its reasoning lives in `## Triage`. Keep it only if
-  you want HOLD-vs-ADVANCE queryable.
-- **D5 Reporter enum.** Proposal: `user · supervisor · worker` with the §4
-  inference. Add `dispatcher` as a fourth value?
-- **D6 Priority.** Proposal: add `low` (three levels). Alternative: keep
-  `high · normal`.
-- **D7 Verb names.** `triage`, `deliver`, `block`/`unblock`, `release`,
-  `park`/`unpark`, `fast-track`, `unapprove`, `close --reject`, `migrate`,
-  `session link|touch|list|prune`. Any you want renamed before they exist?
-- **D8 Worker writes.** Confirm the relaxed invariant in §7: workers may
-  `claim` (when the brief hands them an id), `deliver`, and `block` their own
-  item; controllers keep `close`, `approve`, `release`.
-- **D9 Phasing.** Proposal in §11; the CLI phase is a minor release (0.1.0)
-  because the schema changes.
-- **D10 Session ledger writer.** Classic PostToolUse hook first, mod pane
-  second (§8.2), both feeding `anthill session link`. Alternative: mod only.
+- **D1** Done items are archived permanently in `done/`; discarded items go
+  to `discarded/` and are purged only by a manual `prune`. `--remove` deletes.
+- **D2** Status set: `new · triaged · in-progress · validation · done ·
+  blocked · parked · discarded`.
+- **D3** Disposition: `auto · design · interactive · open`.
+- **D4** `value-verdict` is dropped; its rationale lives in `## Triage`.
+- **D5** Reporter: `user · supervisor · worker` with the §4 inference.
+- **D6** Priority: `high · normal · low`.
+- **D7** Verbs as named in §6.
+- **D8** Workers may `claim` (when the brief hands them an id), `deliver`,
+  and `block` their own item; controllers keep `close`, `approve`, `release`.
+- **D9** Phasing per §11; the CLI phase ships as 0.1.0.
+- **D10** Classic PostToolUse hook first, mod pane second, both feeding
+  `anthill session link`.
 
 ---
 
