@@ -1,9 +1,10 @@
 # Improvement Changelog
 
-One line per completed or discarded proposal. When an item in
-`.anthill/backlog/` reaches `done` (or is discarded), delete the file and add
-a line here. Full detail lives in git history and in the durable homes the
-work landed in. Newest first.
+One line per closed item, written by the `anthill` CLI on
+`close --done` (the item is archived in `done/`), `close --discard`
+(archived in `discarded/`), `close --remove` (file deleted), and `prune`
+(discarded item purged). Full detail lives in the archived item, git
+history, and the durable homes the work landed in. Newest first.
 
 ## Done
 

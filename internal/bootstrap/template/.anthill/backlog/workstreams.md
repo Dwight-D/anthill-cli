@@ -1,6 +1,9 @@
 ---
+schema: 2
 sweep-order: bugs, product, dev, process
 never-implicit:
+change-types:
+never-auto-change-types:
 ---
 
 # Backlog workstreams — <YOUR PROJECT>
@@ -15,11 +18,22 @@ The project's workstream definitions: what belongs in each, how its items are
 triaged (profile), how they get implemented (dispatch route), and what evidence
 closes them. Loaded by the `triage`/`dispatch`/`expedite` skills on invocation.
 
-The frontmatter above is the machine-readable contract:
+The frontmatter above is the machine-readable contract the `anthill` CLI
+reads:
+- **schema** — the backlog schema version; `2`. Written by
+  `anthill backlog migrate`; keep it.
 - **sweep-order** — the order bare `dispatch` walks workstreams.
 - **never-implicit** — workstreams only ever dispatched deliberately (never
   swept by bare `dispatch`). Leave empty unless you have a stream that must
   never auto-run (e.g. a content/authoring stream); then list it here.
+- **change-types** — the project's change-type vocabulary, comma-separated
+  (e.g. `doc, default, option, tooling, bugfix, audit, verify, rename,
+  removal, design, subjective`). Empty = free-form; out-of-vocabulary values
+  warn in `validate`.
+- **never-auto-change-types** — the union of every stream's **Never-auto**
+  change types below. The CLI refuses `disposition: auto` for these, so they
+  are only ever implemented in a design or interactive session or by a
+  human naming the item.
 
 A workstream's identity is its **directory name** under
 `.anthill/backlog/`. Every stream below must have a matching directory.
@@ -40,12 +54,12 @@ defaults, semantics, surfaces>.
     Heuristics: recurring not one-off · distinct not redundant · painful
     workaround · composable · smallest footprint that delivers it. Prefer
     the cheapest change type that works.
-  - *Safety gates* (for an AUTO recommendation): additive-or-reversible ·
+  - *Safety gates* (for `disposition: auto`): additive-or-reversible ·
     verifiable (a concrete `verify`) · bounded scope · unambiguous spec.
   - *<Any domain-specific pre-checks — e.g. a dedup check against an
     existing catalog before adding a new primitive>.*
 - **Never-auto:** <the change types that are permanent, cross-cutting, or
-  taste-laden in your domain — they cap at human review no matter how safe.
+  taste-laden in your domain — never `disposition: auto` no matter how safe.
   e.g. adding a new first-class primitive/surface>.
 - **Dispatch route:** `dispatch` skill; <point specialized item types at
   their authoring skill if you have one>.
@@ -129,8 +143,8 @@ Example shape:
 - **A narrow fix in-flight is NOT a reason to skip the general primitive.**
   Surface "narrow vs general" as a user choice.
 - **Don't force a band-aid around a footgun.** If every disposition is a
-  cosmetic patch on a root-cause design smell, escalate to
-  needs-investigation instead of picking the least-bad patch.
+  cosmetic patch on a root-cause design smell, give it
+  `disposition: design` instead of picking the least-bad patch.
 - **Consolidate on intake; split framing items.** Fold narrow items under an
-  umbrella; split a bundle into approved high-leverage pieces + a parked
-  remainder.
+  umbrella; split a bundle into high-leverage pieces worth approving + a
+  parked remainder.

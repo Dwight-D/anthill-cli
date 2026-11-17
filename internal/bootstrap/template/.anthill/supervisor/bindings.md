@@ -23,7 +23,8 @@ not agents.
 The supervisor verifies evidence, not assertions. Examples of the shape:>
 - <Deliverable class A>: <named artifact / render / count that must attach>.
 - <Code changes>: <build/compile command> exit 0.
-- Backlog items: the item's own `verify` field passing.
+- Backlog items: the item's `## Acceptance` met and its `verify` passing,
+  delivered under its `## Evidence`.
 
 ## Silence threshold
 
@@ -38,11 +39,12 @@ project's real skills/commands.>
 
 ## Backlog intake
 
-<Your intake command — e.g. the schema-owner CLI's `new` verb, or "write a
-file into `.anthill/backlog/intake/` per the schema in
-`.anthill/backlog/bindings.md`". A title + value is the whole ask.>
-Expedite runs only on the user's explicit instruction — never
-self-initiated.
+<Your intake command — by default
+`anthill backlog new --title "…" --value "…" --reporter supervisor`
+(workers pass `--reporter worker`), per `.anthill/backlog/bindings.md`. A
+title + value is the whole ask.>
+Expedite (`fast-track`) and `approve` run only on the user's explicit
+instruction — never self-initiated.
 
 ## Backlog dispatch under co-tenancy
 

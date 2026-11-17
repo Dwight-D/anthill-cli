@@ -30,7 +30,7 @@ The `to:` field, not the signal path, determines who owns a record.
   inline; your spawner persists it.
 - **Controller tier**: write the record to `.anthill/escalations/`,
   addressed to your parent tier (worker → dispatcher → supervisor → user).
-  If item-bound: block the backlog item with note `escalated: <file>`.
+  If item-bound: `anthill backlog block <id> "escalated: <file>"`.
   Then signal your parent through your normal channel — one line + the
   record path, never the content.
 - State the question with full decision context: background, the catch,
@@ -60,8 +60,10 @@ underlying work.
 ## Applying (the tier that owns the work; mandatory)
 
 On your next tick, for each `answered` record you raised or inherited:
-carry the decision into the work (unblock / re-approve / annotate the
-backlog item; whatever the decision directs), append `## Applied`, add one
+carry the decision into the work — for an item-bound record,
+`anthill backlog unblock <id>` to resume under the same claim,
+`anthill backlog unblock <id> --release` to return it to the queue, or an
+annotation in the item's body; whatever the decision directs — append `## Applied`, add one
 line to `LOG.md`, delete the record. An `answered` record found by
 anyone's sweep is actionable by the finder — answered-but-unapplied is the
 failure mode to hunt.

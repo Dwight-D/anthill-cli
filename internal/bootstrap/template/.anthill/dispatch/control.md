@@ -24,5 +24,6 @@ Updated: <date> (<who / session>)
   in-flight spawn), stand down WITHOUT recycling: stay alive, keep draining on
   each wake-up, do not advance the ledger cursor until the state returns to
   `run`.
-- **stop** — wrap up and terminate: unclaim anything in flight, land the ledger,
-  send a one-line summary to the report-target, end.
+- **stop** — wrap up and terminate: verify and close anything in
+  `validation`, release or block anything still `in-progress`, land the
+  ledger, send a one-line summary to the report-target, end.

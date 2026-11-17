@@ -23,6 +23,6 @@ Updated: <date> (<who / session>)
 
 | # | item id | status | outcome / pointer |
 |---|---------|--------|-------------------|
-| 1 | <id>    | done \| in-progress \| pending \| blocked \| escalated | <one line: changelog ref, block reason, or escalation file> |
+| 1 | <id>    | pending \| in-progress \| validation \| done \| blocked \| escalated | <one line: changelog ref, block reason, or escalation file> |
 | 2 | <id>    | pending | |
 | … | …       | …       | |

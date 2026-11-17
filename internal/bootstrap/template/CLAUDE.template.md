@@ -27,7 +27,9 @@ always stops.
 Interactive, one-request-at-a-time behavior is the baseline. Elevated modes —
 autonomy (`autonomous`), supervision (`supervisor`), dispatching
 (`dispatch` / `dispatch-loop`) — are opt-in contracts entered ONLY by invoking
-the skill. Never assume autonomy or spawn a team uninvited.
+the skill. Never assume autonomy or spawn a team uninvited. Controllers own
+closing, approving, and releasing backlog items; a worker may only advance
+the item it holds (claim when its brief hands it one, deliver, block).
 
 ## Improvement flagging is always-on
 
@@ -44,4 +46,4 @@ the reach-for handle (it points at the intake command); or file directly per
 Work intake lives in `.anthill/backlog/`. Improvements and defects route to
 the tool/process/bug workstreams; artifacts the project produces route to the
 product (or a dedicated authoring) workstream. If it fits nowhere, triage
-rejects it with a reason.
+discards it with a reason.

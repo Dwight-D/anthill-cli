@@ -17,11 +17,12 @@ run `/rehydrate`, end the session, start a fresh one, invoke
 ## Procedure
 
 1. **Land workers.** Have each live worker commit its state and report,
-   then tear it down. Never leave a worker running past the snapshot.
+   then tear it down. A worker holding a backlog item delivers or blocks
+   it first. Never leave a worker running past the snapshot.
 2. **Snapshot the task board** to `.anthill/supervisor/board.md`: the
-   mission framing (goal, origin), then one row per task — title, status
-   (pending / in-progress / blocked / done), and a one-line pointer
-   (branch, file, blocking reason). Position only — findings live in
+   mission framing (goal, origin), then one row per task — title, backlog
+   item id (or `none`), board status (pending / in-progress / blocked /
+   done), and a one-line pointer (branch, file, blocking reason). Position only — findings live in
    their durable homes, not here.
 3. **Sweep the rest of the durable set.** Agenda current (user intent
    only)? Routine choices in the decisions log? Pending escalation
@@ -40,5 +41,6 @@ the single source of truth during a session; the file exists only
 between sessions — never maintain both in parallel.
 
 A session that dies without running rehydrate leaves no snapshot. The
-successor falls back to agenda + backlog + git log + decision log and
+successor falls back to agenda + `anthill backlog list --active` (every
+claimed item, with `claimed-by` and `session`) + git log + decision log and
 rebuilds the board from those.

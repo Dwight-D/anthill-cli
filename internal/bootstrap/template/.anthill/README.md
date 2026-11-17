@@ -30,10 +30,12 @@ Every file here is one of two classes:
     scratchpad/        # runtime — gitignored investigation reasoning traces
   backlog/
     workstreams.md     # config  — workstream defs + triage profiles + sweep order
-    bindings.md        # config  — schema owner, commands, id scheme, posture
+    bindings.md        # config  — schema, lifecycle, commands, id scheme, posture
     README.md          # config  — how to submit (intake)
     intake/            # runtime — untriaged, workstream-less items
-    product/ dev/ process/ bugs/   # runtime — open items per workstream
+    product/ dev/ process/ bugs/   # runtime — triaged and live items per workstream
+    done/              # runtime — finished items, kept permanently (created on first close)
+    discarded/         # runtime — discarded items, kept until `anthill backlog prune`
     CHANGELOG.md       # runtime — one line per closed item
   escalations/
     README.md          # config  — record template (portable)

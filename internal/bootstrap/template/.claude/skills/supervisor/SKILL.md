@@ -111,10 +111,18 @@ teardown when possible.
 
 1. Create one shared task per mission before spawning, with a
    self-contained description (goal, pointers, deliverables, definition
-   of done).
+   of done). Each task names its backlog item — the id it implements, or
+   `none` with a one-line reason — and the board row carries that id.
+   File one (`submit`, `--reporter supervisor`) if the work will outlive
+   this session.
 2. Spawn named background agents. Briefs follow
    `.anthill/supervisor/brief-template.md`; the first line invokes the
-   autonomy-contract skill, never restated inline.
+   autonomy-contract skill, never restated inline. A brief with an item
+   id instructs the worker to `anthill backlog claim <id> --by <agent-name>`
+   on pickup and `anthill backlog deliver <id> --by <agent-name> --evidence "…"`
+   on finish. An item that is not ready (not approved, or not `auto`)
+   gets `--force` on the claim only when the user's mission is the
+   greenlight for it.
 3. One worker carries one task — one result (a change, a report, a
    decision) and every step toward it. Work is related when it draws on
    the same information: it reads or changes largely the same artifacts
@@ -159,6 +167,18 @@ give each its own brief, or — when the parts do share information the
 brief failed to show — add the `BATCH REASON` and resend. Rewording a
 brief to hide a second task defeats the gate and breaks rule 3.
 
+### Backlog items
+
+You are the controller of every item your workers hold: you close,
+approve (only on the user's word), and release; a worker may only advance
+the item it holds (claim on pickup, deliver, block). When a worker
+reports a delivered item, read it with `anthill backlog show <id>` and
+verify its `## Evidence` against `## Acceptance` and `verify`, then
+`anthill backlog close <id> --done "<one line>"`, or
+`anthill backlog close <id> --reject "<what is missing>"` and steer the
+worker. A worker torn down mid-item → `anthill backlog release <id>` when
+nothing landed, else `anthill backlog block <id> "<reason>"`.
+
 ## Steering
 
 - Trust task state over messages (wake-up's signals-are-hints stance).
@@ -175,7 +195,7 @@ brief to hide a second task defeats the gate and breaks rule 3.
 
 - Worker cap per bindings (a derived value — re-derive if the
   environment changed).
-- Recycle early: a worker past 150k tokens lands state and is torn
+- Recycle early: a worker past 200k tokens lands state and is torn
   down; spawn cold on the next task.
 - Brief workers to push large exploratory reads onto throwaway subagents
   that return conclusions only.
@@ -183,11 +203,13 @@ brief to hide a second task defeats the gate and breaks rule 3.
 ## Investigation scratchpad
 
 When a subagent investigates and you consume only its conclusion, have
-it write its reasoning trail to
+it write its findings and rationale, with the evidence behind each, to
 `.anthill/supervisor/scratchpad/<yyyy-mm-dd>-<topic>.md` and return the
-path with the conclusion (persist the trail yourself if the agent type
+path with the conclusion (persist the report yourself if the agent type
 is read-only). Reference the file when the conclusion drives a decision
-the user might question.
+the user might question. Word briefs as "findings", "rationale",
+"evidence" — never ask an agent to write out its reasoning: that phrasing
+trips the model's safeguards and the agent dies at launch.
 
 ## Exclusive resources
 
@@ -202,30 +224,41 @@ Report milestones, decisions taken on the user's behalf, and blockers —
 not partial status or intermediate completions. Be concise and skip details unless
 they inform a decision.
 Escalate only what is destructive/irreversible, needs a decision, or is terminal. Deliverables
-as files with one-line captions. If staying silent, stay silent.
+as files with one-line captions. If staying silent, stay silent. Report
+in brief executive summaries, leading with actions needed. Always point
+to concrete artefacts such as investigation reports together with the
+summary so the user can read the full rationale. When a decision is
+needed, always point to where the full context can be found — never
+assume the user knows the situation and the trade-offs from a bare
+identifier.
 
 ## Agenda
 
 `agenda.md` holds user intent only — goals, directives, priorities,
 constraints. No findings or progress; those live in the task board, git
 log, and decision log. Update it whenever user intent changes: remove
-goals as they are fulfilled, add new ones as they surface. The user
-decides when the session is recycled: when context fills up, the user
+goals as they are fulfilled, add new ones as they surface. Keep it clean:
+remove older directives when given a new goal. Persistent information
+belongs elsewhere — treat the agenda as a summary of the goals being
+worked on and the immediate next steps, not a durable log or planning
+document. The user decides when the session is recycled: when context fills up, the user
 runs the `rehydrate` skill — land worker state and preserve mission
 state by snapshotting the board to `.anthill/supervisor/board.md`. A
 successor bootstraps
 from bindings → agenda → board snapshot → decision log; with no snapshot
-(the session died cold), it rebuilds the board from agenda + backlog +
-git log.
+(the session died cold), it rebuilds the board from agenda +
+`anthill backlog list --active` + git log.
 
 ## Improvement duty
 
 Steering reveals a tooling or process gap → file a backlog item
-immediately (intake command in bindings). Flagging is always-on.
+immediately (`submit`, `--reporter supervisor`). Flagging is always-on.
 
 ## Wrap-up
 
-Workers land state; shutdown handshake; clean up agenda - remove goals 
+Workers land state; land item state — every item a task held is closed
+after verifying its evidence, blocked with a reason, or released, none
+left `in-progress` under a dead worker; shutdown handshake; clean up agenda - remove goals 
 & tasks that are completed, preserve anything still outstanding.
 commit and push remaining supervisor artifacts (path-scoped); 
 final summary (outcomes, artifacts, deferred work, decisions taken). 

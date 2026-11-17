@@ -13,6 +13,17 @@ decision), one paragraph of intent, then the ordered steps toward it
 with any user-specified sequencing. Work drawing on unrelated
 information goes to its own worker>
 
+ITEM
+<the backlog id this task implements, or "none — <one-line reason>". With
+an id, the worker holds that item: on pickup
+`anthill backlog claim <id> --by <agent-name>` (the spawner adds `--force`
+only when the item is not ready and the user's mission is its greenlight);
+on finish `anthill backlog deliver <id> --by <agent-name> --evidence "…"`
+carrying the DEFINITION OF DONE evidence; on a hard stop
+`anthill backlog block <id> "<reason>"`. The worker never closes,
+releases, or approves, and never touches another item — the supervisor
+verifies the delivered evidence and closes>
+
 BATCH REASON
 <always present. "none" for a one-task brief. A brief with several parts
 names the artifacts they share (files, documents, logs, backlog items,
@@ -38,7 +49,7 @@ registered agent name or the raw agentId from the spawn result. Never a
 bare role word like "the supervisor"; if no handle resolves, report in
 your final message>
 Land state before signaling: put results somewhere durable first (commit,
-item body, escalation record), then message — a lost message must cost
+`deliver` on the ITEM, escalation record), then message — a lost message must cost
 latency, never content. Report on material transitions only: blocked /
 needs-decision / done / failed, one line each. No chatter. Before
 reporting blocked, consider whether the blocker is the other worker's
