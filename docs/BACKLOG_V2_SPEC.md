@@ -29,7 +29,8 @@ it owns.
 
 | key | type | set by | meaning |
 |---|---|---|---|
-| `title` | string, required | submitter | One line. The id (filename stem) is derived from it once and never changes. |
+| `title` | string, required | submitter | One line. The id is the item's key (`ANT-74`, [`ITEM_KEYS_SPEC.md`](ITEM_KEYS_SPEC.md) §1), not the title; the title's slug is only the cosmetic tail of the filename and follows a title edit. |
+| `former-id` | string | CLI on `migrate` | The pre-key slug id an item was filed under before the key scheme; accepted as a reference by every verb. Never set by `set`. |
 | `summary` | string | submitter or triage | One or two sentences: what the change is. Shown in every list view. Required from `triaged` onward. |
 | `value` | string, required | submitter | The pain it removes or the potential it unlocks. The triage currency. |
 | `workstream` | enum (project dirs) | triage | Absent while in `intake/`; equals the containing directory afterwards. |
@@ -89,14 +90,23 @@ and `## Log`; it never rewrites prose.
 
 ```
 .anthill/backlog/
-  workstreams.md          project vocabulary (frontmatter) + stream profiles
+  workstreams.md          project vocabulary (frontmatter: schema: 3, key-prefix: ANT, …) + stream profiles
   bindings.md             how this project runs the mechanism
   CHANGELOG.md            one line per closed item
+  sequence                highest item number ever allocated (one integer)
   intake/                 status new, no workstream
   <workstream>/           triaged … validation, blocked, parked
   done/                   status done; kept permanently (the project's history)
   discarded/              status discarded; kept until purged by hand
 ```
+
+Item files are named `NNNN-<slug>.md` inside those directories: the
+zero-padded key number (`0074`) followed by the title slug. The id is the key
+`<key-prefix>-N` (`ANT-74`); the number is allocated sequentially, never
+reused, and parsed from the filename; the slug tail is cosmetic. Every verb
+accepts the key (case-insensitive), the bare number, or a former id. The
+full contract — allocation, resolution, `renumber`, validation rules — is
+[`ITEM_KEYS_SPEC.md`](ITEM_KEYS_SPEC.md) §1–§3.
 
 `done/` is never pruned. `discarded/` is purged only by an explicit
 `anthill backlog prune [--older-than <duration>] [--dry-run]`, which deletes
@@ -261,8 +271,12 @@ Every verb: `--json` structured output, exit codes 0 ok · 1 internal ·
 anthill backlog new --title "…" --value "…" [--summary "…"] [--description "…"|--description-file f]
                     [--source "…"] [--hint <ws>] [--reporter user|supervisor|worker] [--priority …]
 ```
-Creates `intake/<id>.md` with `status: new`, `dispatch: proposed`,
-`created-at`, the body skeleton, and the reporter per §4. Prints the id.
+Allocates the next key (`ANT-74`, [`ITEM_KEYS_SPEC.md`](ITEM_KEYS_SPEC.md)
+§2.2) and creates `intake/NNNN-<slug>.md` with `status: new`,
+`dispatch: proposed`, `created-at`, the body skeleton, and the reporter per
+§4. Prints the key. Every `<id>` argument below accepts the key
+(case-insensitive), the bare number, or a former id; output always carries
+the canonical key.
 
 ### 6.2 Reading
 
@@ -331,10 +345,17 @@ anthill backlog set <id> key=value …    free fields only: title summary value 
 ```
 anthill backlog validate [--strict]     per-item violations, rule names, ids
 anthill doctor                           same rules, same listing (never a bare count)
-anthill backlog migrate [--dry-run]      v1 → v2 (§9), idempotent
+anthill backlog migrate [--dry-run] [--key-prefix XXX]   v1 → v2 (§9) then v2 → v3 (keys), idempotent
+anthill backlog renumber <id> [--to N]   move an item to another key number (ITEM_KEYS_SPEC.md §3.3)
 anthill backlog prune [--older-than d] [--dry-run]   purge discarded/ (manual, never automatic)
 anthill session link|touch|list|prune    §5
 ```
+
+`validate` and `doctor` apply the key rules of
+[`ITEM_KEYS_SPEC.md`](ITEM_KEYS_SPEC.md) §3.3 as well: `key-prefix-missing`,
+`key-prefix-invalid`, `filename-form`, `id-unique` (by number across every
+directory), `former-id-unique`. A tree whose `workstreams.md` is not stamped
+`schema: 3` while it holds items is refused (exit 6) until migrated.
 
 ---
 
@@ -418,13 +439,18 @@ call the same CLI verb so the ledger has one writer.
 
 ---
 
-## 9. Migration (v1 → v2)
+## 9. Migration (v1 → v2 → v3)
 
-This is the one section allowed to speak in terms of the previous design.
+This is the one section allowed to speak in terms of the previous designs.
 
-`anthill backlog migrate` rewrites every item in place, idempotently, and
-stamps `schema: 2` into `workstreams.md` frontmatter so `validate` knows which
-rules apply. Mapping:
+`anthill backlog migrate` runs two idempotent passes and stamps `schema: 3`
+(plus `key-prefix`) into `workstreams.md` frontmatter so `validate` knows
+which rules apply. The second pass, v2 → v3, keys every item still filed as
+`<slug>.md`: numbers in `created-at` order, renames to `NNNN-<slug>.md`,
+records `former-id`, writes `sequence`, and rewrites the sessions ledger and
+escalation records that name the old id —
+[`ITEM_KEYS_SPEC.md`](ITEM_KEYS_SPEC.md) §3.5. The first pass, v1 → v2,
+maps the fields:
 
 | v1 | v2 |
 |---|---|
@@ -444,9 +470,10 @@ rules apply. Mapping:
 | `created-at` absent | file's git first-commit date if available, else the migration time |
 | empty body | the §1.2 skeleton, `## Description` seeded with `value` |
 
-Consumer action after upgrading the CLI: run `anthill backlog migrate`, then
-`anthill sync` for the skills, then re-derive `bindings.md` from the new
-template (`sync` never touches `.anthill/`).
+Consumer action after upgrading the CLI: run `anthill backlog migrate
+[--key-prefix XXX]` (the flag is required when `workstreams.md` carries no
+`key-prefix`), then `anthill sync` for the skills, then re-derive
+`bindings.md` from the new template (`sync` never touches `.anthill/`).
 
 ---
 
