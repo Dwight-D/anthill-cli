@@ -124,12 +124,13 @@ func (a *App) newDoctorCommand() *cobra.Command {
 			root, rerr := a.resolveRoot()
 			if rerr != nil {
 				checks := []checkResult{{"B", "discoverable", false, rerr.Error(), sevHard}}
-				return a.reportDoctor(checks, strict)
+				return a.reportDoctor(checks, nil, strict)
 			}
 			var checks []checkResult
 			checks = append(checks, a.sectionAChecks(root)...)
-			checks = append(checks, a.sectionBChecks(root)...)
-			return a.reportDoctor(checks, strict)
+			bChecks, violations := a.sectionBChecks(root)
+			checks = append(checks, bChecks...)
+			return a.reportDoctor(checks, violations, strict)
 		},
 	}
 	cmd.Flags().BoolVar(&strict, "strict", false, "also fail on remaining template placeholders")
@@ -188,9 +189,11 @@ func (a *App) sectionAChecks(root string) []checkResult {
 	return checks
 }
 
-// sectionBChecks builds the runtime data-integrity checks (unchanged semantics
-// from the original doctor).
-func (a *App) sectionBChecks(root string) []checkResult {
+// sectionBChecks builds the runtime data-integrity checks. It also returns the
+// backlog violations behind the backlog-valid check: the same rule set and
+// listing as `anthill backlog validate`.
+func (a *App) sectionBChecks(root string) ([]checkResult, []backlog.Violation) {
+	var violations []backlog.Violation
 	var checks []checkResult
 	checks = append(checks, checkResult{"B", "discoverable", true, root, sevHard})
 
@@ -223,10 +226,12 @@ func (a *App) sectionBChecks(root string) []checkResult {
 	if err != nil {
 		checks = append(checks, checkResult{"B", "backlog-valid", false, err.Error(), sevHard})
 	} else {
+		violations = res.Violations
 		if res.OK {
 			checks = append(checks, checkResult{"B", "backlog-valid", true, fmt.Sprintf("%d items clean", res.Checked), sevHard})
 		} else {
-			checks = append(checks, checkResult{"B", "backlog-valid", false, fmt.Sprintf("%d violations", len(res.Violations)), sevHard})
+			checks = append(checks, checkResult{"B", "backlog-valid", false,
+				fmt.Sprintf("%d violation(s) in %d items (listed below; same rules as 'anthill backlog validate')", len(res.Violations), res.Checked), sevHard})
 		}
 		// change-type vocabulary: advisory only. An item using a change-type
 		// outside the project's declared set warns but never fails doctor —
@@ -261,10 +266,13 @@ func (a *App) sectionBChecks(root string) []checkResult {
 	} else {
 		checks = append(checks, checkResult{"B", "escalations-applied", false, "answered but unapplied: " + strings.Join(unapplied, ", "), sevHard})
 	}
-	return checks
+	return checks, violations
 }
 
-func (a *App) reportDoctor(checks []checkResult, strict bool) error {
+func (a *App) reportDoctor(checks []checkResult, violations []backlog.Violation, strict bool) error {
+	if violations == nil {
+		violations = []backlog.Violation{}
+	}
 	fail := false
 	for _, c := range checks {
 		if c.OK {
@@ -280,11 +288,11 @@ func (a *App) reportDoctor(checks []checkResult, strict bool) error {
 		}
 	}
 	if a.json {
-		if err := a.emitJSON(map[string]any{"ok": !fail, "checks": checks}); err != nil {
+		if err := a.emitJSON(map[string]any{"ok": !fail, "checks": checks, "violations": violations}); err != nil {
 			return err
 		}
 	} else {
-		a.printDoctorSections(checks, strict)
+		a.printDoctorSections(checks, violations, strict)
 	}
 	if fail {
 		return &Error{Exit: 3, Code: "validation", Message: "doctor found integrity problems"}
@@ -313,7 +321,7 @@ func doctorMark(c checkResult, strict bool) string {
 }
 
 // printDoctorSections renders the checks grouped under their two section headers.
-func (a *App) printDoctorSections(checks []checkResult, strict bool) {
+func (a *App) printDoctorSections(checks []checkResult, violations []backlog.Violation, strict bool) {
 	sections := []struct{ key, label string }{
 		{"A", "Section A — install integrity"},
 		{"B", "Section B — runtime data integrity"},
@@ -329,6 +337,11 @@ func (a *App) printDoctorSections(checks []checkResult, strict bool) {
 				printed = true
 			}
 			a.answer("  [%s] %s: %s", doctorMark(c, strict), c.Name, c.Detail)
+			if c.Name == "backlog-valid" {
+				for _, v := range violations {
+					a.answer("      %s", v.String())
+				}
+			}
 		}
 	}
 }
@@ -346,7 +359,7 @@ func (a *App) newValidateCommand() *cobra.Command {
 			}
 			res, err := store.Validate(strict)
 			if err != nil {
-				return internalErr(err.Error())
+				return wrapStoreErr(err)
 			}
 			estore, _ := a.escalationStore()
 			problems, eerr := estore.ValidateWellFormed()
@@ -365,19 +378,18 @@ func (a *App) newValidateCommand() *cobra.Command {
 					return jerr
 				}
 			} else {
-				if ok {
-					a.note("ok: %d backlog items, escalations well-formed", res.Checked)
-				} else {
-					for _, v := range res.Violations {
-						a.note("%s [%s]: %s", v.ID, v.Rule, v.Message)
-					}
-					for _, p := range problems {
-						a.note("escalation %s", p)
-					}
+				for _, v := range res.Violations {
+					a.answer("%s", v.String())
+				}
+				for _, p := range problems {
+					a.answer("escalation: %s", p)
 				}
 				// Warnings are advisory — printed regardless of ok, never affect exit.
 				for _, w := range res.Warnings {
-					a.note("warn: %s [%s]: %s", w.ID, w.Rule, w.Message)
+					a.answer("warn: %s", w.String())
+				}
+				if ok {
+					a.note("ok: %d backlog items, escalations well-formed", res.Checked)
 				}
 			}
 			if !ok {
@@ -386,7 +398,7 @@ func (a *App) newValidateCommand() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().BoolVar(&strict, "strict", false, "add cross-field consistency checks")
+	cmd.Flags().BoolVar(&strict, "strict", false, "promote warnings (change-type vocabulary) to violations")
 	return cmd
 }
 
