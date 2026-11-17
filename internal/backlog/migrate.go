@@ -11,20 +11,25 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/Dwight-D/anthill-cli/internal/escalation"
 	"github.com/Dwight-D/anthill-cli/internal/mdfile"
+	"github.com/Dwight-D/anthill-cli/internal/session"
 )
 
 // MigrateOptions tunes `anthill backlog migrate`.
 type MigrateOptions struct {
 	DryRun          bool
 	DefaultReporter string // reporter for items that lack one (default "user")
+	KeyPrefix       string // key prefix to stamp when workstreams.md has none
 }
 
-// MigrateChange is one migrated item and what changed.
+// MigrateChange is one migrated item and what changed. FormerID is set by the
+// schema 2 → 3 pass: the pre-key slug the item was filed under.
 type MigrateChange struct {
-	ID      string   `json:"id"`
-	Path    string   `json:"path"`
-	Changes []string `json:"changes"`
+	ID       string   `json:"id"`
+	Path     string   `json:"path"`
+	FormerID string   `json:"former-id,omitempty"`
+	Changes  []string `json:"changes"`
 }
 
 // MigrateSkip is a file migration could not process; it is left untouched.
@@ -33,17 +38,22 @@ type MigrateSkip struct {
 	Reason string `json:"reason"`
 }
 
-// MigrateResult reports a migration run.
+// MigrateResult reports a migration run. References lists the sessions-ledger
+// and escalation records whose item was rewritten to a key.
 type MigrateResult struct {
 	DryRun        bool            `json:"dry_run"`
 	Changed       []MigrateChange `json:"changed"`
 	Unchanged     int             `json:"unchanged"`
 	Skipped       []MigrateSkip   `json:"skipped"`
 	SchemaStamped bool            `json:"schema_stamped"`
+	KeyPrefix     string          `json:"key_prefix,omitempty"`
+	PrefixStamped bool            `json:"key_prefix_stamped"`
+	Sequence      int             `json:"sequence,omitempty"`
+	References    []string        `json:"references"`
 }
 
 // migrateKnownKeys are the frontmatter keys migration understands: the
-// schema-2 keys plus the schema-1 value-verdict it folds into ## Triage.
+// current schema keys plus the schema-1 value-verdict it folds into ## Triage.
 var migrateKnownKeys = func() map[string]bool {
 	m := map[string]bool{"value-verdict": true}
 	for _, k := range FieldNames {
@@ -56,13 +66,17 @@ var migrateKnownKeys = func() map[string]bool {
 	return m
 }()
 
-// Migrate rewrites every item from schema 1 to schema 2 in place (BACKLOG_V2
-// §9) and stamps `schema: 2` into workstreams.md. It is idempotent: an item
-// already on schema 2 is left byte-identical. Files without parseable
-// frontmatter or with keys outside both schemas are skipped and reported,
-// never modified.
+// Migrate upgrades the tree to the current schema and is idempotent at it.
+// A tree at schema 1 (or unstamped) first gets the 1 → 2 field mapping
+// (BACKLOG_V2 §9); then every item still filed under its slug is keyed
+// (ITEM_KEYS_SPEC.md §3.5): numbered in created-at order, renamed to
+// `NNNN-<slug>.md`, stamped with `former-id`, and the sessions ledger and
+// escalation records that name the old id are rewritten. `sequence`,
+// `schema: 3` and `key-prefix` are stamped into place. Files without
+// parseable frontmatter or with keys outside the schemas are skipped and
+// reported, never modified.
 func (s *Store) Migrate(opt MigrateOptions) (*MigrateResult, error) {
-	res := &MigrateResult{DryRun: opt.DryRun, Changed: []MigrateChange{}, Skipped: []MigrateSkip{}}
+	res := &MigrateResult{DryRun: opt.DryRun, Changed: []MigrateChange{}, Skipped: []MigrateSkip{}, References: []string{}}
 	reporter := opt.DefaultReporter
 	if reporter == "" {
 		reporter = "user"
@@ -70,53 +84,45 @@ func (s *Store) Migrate(opt MigrateOptions) (*MigrateResult, error) {
 	if !reporters[reporter] {
 		return nil, invalid("illegal default reporter %q", reporter)
 	}
-	_, neverAuto := s.changeTypeConfig()
-	migratedAt := Stamp()
-
-	type loc struct{ dir, ws string }
-	locs := []loc{{s.intakeDir(), ""}}
-	wss, err := s.Workstreams()
+	v, err := s.SchemaVersion()
 	if err != nil {
 		return nil, err
 	}
-	for _, ws := range wss {
-		locs = append(locs, loc{s.wsDir(ws), ws})
+	fmPrefix, err := s.KeyPrefix()
+	if err != nil {
+		return nil, err
 	}
-	locs = append(locs, loc{s.doneDir(), DoneDir}, loc{s.discardedDir(), DiscardedDir})
+	prefix := fmPrefix
+	if prefix == "" && opt.KeyPrefix != "" {
+		if !ValidPrefix(opt.KeyPrefix) {
+			return nil, invalid("key prefix %q must be 2 to 5 uppercase letters", opt.KeyPrefix)
+		}
+		prefix = opt.KeyPrefix
+	}
+	nItems, err := s.countItemFiles()
+	if err != nil {
+		return nil, err
+	}
+	if prefix == "" && nItems > 0 {
+		return nil, ErrKeyPrefixMissing
+	}
+	res.KeyPrefix = prefix
 
-	for _, l := range locs {
-		entries, err := os.ReadDir(l.dir)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
+	if v <= 1 && nItems > 0 {
+		if err := s.migrateFields(res, reporter, opt.DryRun); err != nil {
 			return nil, err
 		}
-		for _, e := range entries {
-			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
-				continue
-			}
-			path := filepath.Join(l.dir, e.Name())
-			id := strings.TrimSuffix(e.Name(), ".md")
-			ch, skip, err := s.migrateFile(path, id, l.ws, reporter, migratedAt, neverAuto, opt.DryRun)
-			if err != nil {
-				return nil, err
-			}
-			switch {
-			case skip != nil:
-				res.Skipped = append(res.Skipped, *skip)
-			case ch != nil:
-				res.Changed = append(res.Changed, *ch)
-			default:
-				res.Unchanged++
-			}
+	}
+	if nItems > 0 {
+		if err := s.migrateKeys(res, prefix, opt.DryRun); err != nil {
+			return nil, err
 		}
 	}
-	sort.Slice(res.Changed, func(i, j int) bool { return res.Changed[i].ID < res.Changed[j].ID })
-
-	if v, err := s.SchemaVersion(); err != nil {
+	if err := s.countUnchanged(res); err != nil {
 		return nil, err
-	} else if v != CurrentSchema {
+	}
+
+	if v != CurrentSchema {
 		res.SchemaStamped = true
 		if !opt.DryRun {
 			if err := s.StampSchema(); err != nil {
@@ -124,7 +130,72 @@ func (s *Store) Migrate(opt MigrateOptions) (*MigrateResult, error) {
 			}
 		}
 	}
+	if fmPrefix == "" && prefix != "" {
+		res.PrefixStamped = true
+		if !opt.DryRun {
+			if err := s.StampKeyPrefix(prefix); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return res, nil
+}
+
+// itemLoc is one item directory and its workstream label ("" for intake,
+// "done"/"discarded" for the archives).
+type itemLoc struct{ dir, ws string }
+
+func (s *Store) itemLocs() ([]itemLoc, error) {
+	locs := []itemLoc{{s.intakeDir(), ""}}
+	wss, err := s.Workstreams()
+	if err != nil {
+		return nil, err
+	}
+	for _, ws := range wss {
+		locs = append(locs, itemLoc{s.wsDir(ws), ws})
+	}
+	return append(locs, itemLoc{s.doneDir(), DoneDir}, itemLoc{s.discardedDir(), DiscardedDir}), nil
+}
+
+// migrateFields is the schema 1 → 2 pass: it maps every item's fields in
+// place, keeping its filename.
+func (s *Store) migrateFields(res *MigrateResult, reporter string, dryRun bool) error {
+	_, neverAuto := s.changeTypeConfig()
+	migratedAt := Stamp()
+	locs, err := s.itemLocs()
+	if err != nil {
+		return err
+	}
+	var changed []MigrateChange
+	for _, l := range locs {
+		entries, err := os.ReadDir(l.dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") {
+				continue
+			}
+			path := filepath.Join(l.dir, e.Name())
+			id := strings.TrimSuffix(e.Name(), ".md")
+			ch, skip, err := s.migrateFile(path, id, l.ws, reporter, migratedAt, neverAuto, dryRun)
+			if err != nil {
+				return err
+			}
+			switch {
+			case skip != nil:
+				res.Skipped = append(res.Skipped, *skip)
+			case ch != nil:
+				changed = append(changed, *ch)
+			}
+		}
+	}
+	sort.Slice(changed, func(i, j int) bool { return changed[i].ID < changed[j].ID })
+	res.Changed = append(res.Changed, changed...)
+	return nil
 }
 
 // migrateFile maps one item file. ws is the containing workstream dir name
@@ -272,7 +343,7 @@ func (s *Store) migrateFile(path, id, ws, reporter, migratedAt string, neverAuto
 		return ch, nil, nil
 	}
 	if target != "" {
-		if err := s.relocateUnchecked(it, target); err != nil {
+		if err := s.relocateUnchecked(it, filepath.Join(target, filepath.Base(path))); err != nil {
 			return nil, nil, err
 		}
 		ch.Path = it.Path
@@ -284,11 +355,146 @@ func (s *Store) migrateFile(path, id, ws, reporter, migratedAt string, neverAuto
 	return ch, nil, nil
 }
 
-// relocateUnchecked moves an item file into dir without the persist gate:
+// migrateKeys is the schema 2 → 3 pass (ITEM_KEYS_SPEC.md §3.5): every item
+// file not yet in `NNNN-<slug>.md` form is numbered in created-at order
+// (then old id), renamed in place, stamped with former-id and a Log line,
+// and the ledger/escalation references to its old id are rewritten. Items
+// already in key form are left alone, so the pass is idempotent.
+func (s *Store) migrateKeys(res *MigrateResult, prefix string, dryRun bool) error {
+	locs, err := s.itemLocs()
+	if err != nil {
+		return err
+	}
+	skipped := map[string]bool{}
+	for _, sk := range res.Skipped {
+		skipped[sk.Path] = true
+	}
+	type cand struct {
+		it   *Item
+		stem string
+	}
+	var cands []cand
+	for _, l := range locs {
+		entries, err := os.ReadDir(l.dir)
+		if err != nil {
+			if os.IsNotExist(err) {
+				continue
+			}
+			return err
+		}
+		for _, e := range entries {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".md") || IsItemFilename(e.Name()) {
+				continue
+			}
+			path := filepath.Join(l.dir, e.Name())
+			if skipped[path] {
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			stem := strings.TrimSuffix(e.Name(), ".md")
+			it, perr := parseItem(data, stem, path)
+			if perr != nil {
+				res.Skipped = append(res.Skipped, MigrateSkip{Path: path, Reason: perr.Error()})
+				continue
+			}
+			cands = append(cands, cand{it: it, stem: stem})
+		}
+	}
+	if len(cands) == 0 {
+		return nil
+	}
+	sort.SliceStable(cands, func(i, j int) bool {
+		if cands[i].it.CreatedAt != cands[j].it.CreatedAt {
+			return cands[i].it.CreatedAt < cands[j].it.CreatedAt
+		}
+		return cands[i].stem < cands[j].stem
+	})
+	high, err := s.maxNumber()
+	if err != nil {
+		return err
+	}
+	mapping := map[string]string{}
+	for _, c := range cands {
+		high++
+		key := Key{Prefix: prefix, Number: high}
+		oldPath := c.it.Path
+		newPath := filepath.Join(filepath.Dir(oldPath), FormatFilename(high, Slug(c.stem)))
+		c.it.FormerID = c.stem
+		c.it.appendLog("migrate schema 2 → 3", "anthill", "", c.stem+" → "+key.String())
+		mapping[c.stem] = key.String()
+		ch := MigrateChange{ID: key.String(), Path: newPath, FormerID: c.stem, Changes: []string{
+			"renamed " + filepath.Base(oldPath) + " → " + filepath.Base(newPath),
+			"former-id " + c.stem,
+		}}
+		res.Changed = append(res.Changed, ch)
+		if dryRun {
+			continue
+		}
+		if err := s.relocateUnchecked(c.it, newPath); err != nil {
+			return err
+		}
+	}
+	res.Sequence = high
+	if !dryRun {
+		if err := s.bumpSequence(high); err != nil {
+			return err
+		}
+	}
+	refs, err := s.rewriteReferences(mapping, dryRun)
+	if err != nil {
+		return err
+	}
+	res.References = append(res.References, refs...)
+	return nil
+}
+
+// rewriteReferences points every sessions-ledger record and escalation record
+// whose item is a key of mapping at the mapped value. It returns one line per
+// rewrite ("<file>: item <old> → <new>").
+func (s *Store) rewriteReferences(mapping map[string]string, dryRun bool) ([]string, error) {
+	var out []string
+	ledger, err := session.NewStore(s.root).RewriteItems(mapping, dryRun)
+	if err != nil {
+		return nil, err
+	}
+	out = append(out, ledger...)
+	esc, err := escalation.NewStore(s.root).RewriteItemRefs(mapping, dryRun)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, esc...), nil
+}
+
+// countUnchanged sets res.Unchanged: every item file that no change entry
+// names (by its pre-change path) and that was not skipped.
+func (s *Store) countUnchanged(res *MigrateResult) error {
+	total, err := s.countItemFiles()
+	if err != nil {
+		return err
+	}
+	touched := map[string]bool{}
+	for _, c := range res.Changed {
+		if c.FormerID != "" {
+			touched[filepath.Join(filepath.Dir(c.Path), c.FormerID+".md")] = true
+		} else {
+			touched[c.Path] = true
+		}
+	}
+	res.Unchanged = total - len(touched) - len(res.Skipped)
+	if res.Unchanged < 0 {
+		res.Unchanged = 0
+	}
+	return nil
+}
+
+// relocateUnchecked moves an item file to newPath without the persist gate:
 // migration writes whatever the source held, and validate reports the gaps.
-func (s *Store) relocateUnchecked(it *Item, dir string) error {
+func (s *Store) relocateUnchecked(it *Item, newPath string) error {
 	oldPath := it.Path
-	it.Path = filepath.Join(dir, it.ID+".md")
+	it.Path = newPath
 	if err := s.persist(it); err != nil {
 		it.Path = oldPath
 		return err

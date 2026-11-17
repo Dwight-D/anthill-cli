@@ -16,9 +16,9 @@ import (
 )
 
 // ErrNeedsMigration indicates the tree holds items written under an earlier
-// schema (no `schema: 2` stamp in workstreams.md); `anthill backlog migrate`
+// schema (no `schema: 3` stamp in workstreams.md); `anthill backlog migrate`
 // upgrades it.
-var ErrNeedsMigration = errors.New("backlog is not on schema 2: run 'anthill backlog migrate' to upgrade it")
+var ErrNeedsMigration = errors.New("backlog is not on schema 3: run 'anthill backlog migrate' to upgrade it")
 
 // validateForPersist is the per-write gate shared by every write. It rejects
 // writes that would violate the schema at the point of write: missing
@@ -82,11 +82,12 @@ var liveWorkstreamStatuses = map[string]bool{
 	StatusBlocked: true, StatusParked: true,
 }
 
-// Validate certifies the backlog tree against the schema-2 rules: frontmatter,
+// Validate certifies the backlog tree against the schema-3 rules: frontmatter,
 // unknown-key, location, enum, required (by stage), disposition-coherence,
-// hint-stripped, escalation-ref, stray-file, id-unique. strict promotes
-// warnings to violations. A tree that needs migration returns
-// ErrNeedsMigration.
+// hint-stripped, escalation-ref, stray-file, filename-form, id-unique (by
+// key number across every directory), former-id-unique, key-prefix-missing,
+// key-prefix-invalid. strict promotes warnings to violations. A tree that
+// needs migration returns ErrNeedsMigration.
 func (s *Store) Validate(strict bool) (*ValidateResult, error) {
 	need, err := s.NeedsMigration()
 	if err != nil {
@@ -97,7 +98,22 @@ func (s *Store) Validate(strict bool) (*ValidateResult, error) {
 	}
 	res := &ValidateResult{OK: true, Violations: []Violation{}, Warnings: []Violation{}}
 	declared, neverAuto := s.changeTypeConfig()
-	idDirs := map[string][]string{}
+	numDirs := map[int][]string{}
+	formerKeys := map[string][]string{}
+
+	prefix, perr := s.KeyPrefix()
+	switch {
+	case errors.Is(perr, ErrKeyPrefixInvalid):
+		res.add("workstreams.md", "key-prefix-invalid", "key-prefix %q must be 2 to 5 uppercase letters", prefix)
+	case perr != nil:
+		return nil, perr
+	case prefix == "":
+		if n, err := s.countItemFiles(); err != nil {
+			return nil, err
+		} else if n > 0 {
+			res.add("workstreams.md", "key-prefix-missing", "add key-prefix: XXX to .anthill/backlog/workstreams.md or run migrate --key-prefix XXX")
+		}
+	}
 
 	check := func(dir, label string, kind dirKind) error {
 		entries, err := os.ReadDir(dir)
@@ -120,14 +136,21 @@ func (s *Store) Validate(strict bool) (*ValidateResult, error) {
 				}
 				continue
 			}
-			id := strings.TrimSuffix(name, ".md")
+			n, ok := ParseFilename(name)
+			if !ok {
+				res.add(name, "filename-form", "item file in %s/ is not NNNN-<slug>.md", label)
+				continue
+			}
+			id := Key{Prefix: prefix, Number: n}.String()
 			res.Checked++
-			idDirs[id] = append(idDirs[id], label)
+			numDirs[n] = append(numDirs[n], label)
 			data, rerr := os.ReadFile(filepath.Join(dir, name))
 			if rerr != nil {
 				return rerr
 			}
-			s.validateFile(res, data, id, label, kind, declared, neverAuto)
+			if former := s.validateFile(res, data, id, label, kind, declared, neverAuto); former != "" {
+				formerKeys[former] = append(formerKeys[former], id)
+			}
 		}
 		return nil
 	}
@@ -151,9 +174,15 @@ func (s *Store) Validate(strict bool) (*ValidateResult, error) {
 		return nil, err
 	}
 
-	for id, dirs := range idDirs {
+	for n, dirs := range numDirs {
 		if len(dirs) > 1 {
-			res.add(id, "id-unique", "id appears in multiple dirs: %s", strings.Join(dirs, ", "))
+			res.add(Key{Prefix: prefix, Number: n}.String(), "id-unique", "number %d appears in multiple dirs: %s", n, strings.Join(dirs, ", "))
+		}
+	}
+	for former, keys := range formerKeys {
+		if len(keys) > 1 {
+			sort.Strings(keys)
+			res.add(keys[0], "former-id-unique", "former-id %q is carried by %s", former, strings.Join(keys, ", "))
 		}
 	}
 	if strict {
@@ -177,12 +206,13 @@ func sortViolations(vs []Violation) {
 	})
 }
 
-// validateFile checks one item file's bytes. label is the containing dir name.
-func (s *Store) validateFile(res *ValidateResult, data []byte, id, label string, kind dirKind, declared, neverAuto map[string]bool) {
+// validateFile checks one item file's bytes. label is the containing dir
+// name. It returns the item's former-id (for the uniqueness rule).
+func (s *Store) validateFile(res *ValidateResult, data []byte, id, label string, kind dirKind, declared, neverAuto map[string]bool) string {
 	fm, body, err := mdfile.Split(data)
 	if err != nil {
 		res.add(id, "frontmatter", "%s", err.Error())
-		return
+		return ""
 	}
 	dec := yaml.NewDecoder(bytes.NewReader(fm))
 	dec.KnownFields(true)
@@ -193,10 +223,13 @@ func (s *Store) validateFile(res *ValidateResult, data []byte, id, label string,
 	var it Item
 	if err := yaml.Unmarshal(fm, &it); err != nil {
 		res.add(id, "frontmatter", "%s", err.Error())
-		return
+		return ""
 	}
 	it.ID = id
 	it.Body = body
+	if it.FormerID != "" && !formerRe.MatchString(it.FormerID) {
+		res.add(id, "former-id", "former-id %q is not a lowercase slug", it.FormerID)
+	}
 
 	// location: the directory and the item's workstream/status agree.
 	switch kind {
@@ -265,6 +298,7 @@ func (s *Store) validateFile(res *ValidateResult, data []byte, id, label string,
 			res.add(id, "escalation-ref", "note references missing escalation record %q", f)
 		}
 	}
+	return it.FormerID
 }
 
 // requiredMissing lists the keys the item's stage requires but lacks.

@@ -70,11 +70,13 @@ func (a *App) newSessionLink() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := bstore.Find(p.Item); err != nil {
+			it, err := bstore.Find(p.Item)
+			if err != nil {
 				e := wrapStoreErr(err)
 				e.ID = p.Item
 				return e
 			}
+			p.Item = it.ID // the canonical key, never the raw argument
 			store := session.NewStore(bstore.Root())
 			rec, created, err := store.Link(p)
 			if err != nil {
@@ -150,6 +152,16 @@ func (a *App) newSessionList() *cobra.Command {
 			recs, err := session.NewStore(root).List()
 			if err != nil {
 				return wrapSessionErr(err)
+			}
+			if item != "" {
+				// Resolve any accepted reference (key, number, former id) to the
+				// canonical key; an unknown reference matches ledger records
+				// literally, so records of a removed item stay listable.
+				if it, err := backlog.NewStore(root).Find(item); err == nil {
+					item = it.ID
+				} else if errors.Is(err, backlog.ErrInvalidID) {
+					return wrapStoreErr(err)
+				}
 			}
 			var activeItems map[string]bool
 			if active {

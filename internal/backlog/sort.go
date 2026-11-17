@@ -22,7 +22,7 @@ func IsSortKey(k string) bool {
 //	"priority" — priority, then rank
 //	"age"      — oldest created-at first, then id
 //	"updated"  — most recent stamp first, then id
-//	"id"       — lexicographic id
+//	"id"       — key number ascending
 //
 // order is the workstream sweep order (from Store.SweepOrder); workstreams
 // absent from it rank after listed ones, and intake items rank last. reverse
@@ -73,12 +73,12 @@ func SortItems(items []*Item, key string, order []string, reverse bool) {
 		if l, decided := ageLess(a, b); decided {
 			return l
 		}
-		return a.ID < b.ID
+		return idLess(a, b)
 	}
 	less := func(a, b *Item) bool {
 		switch key {
 		case "id":
-			return a.ID < b.ID
+			return idLess(a, b)
 		case "priority":
 			if PriorityRank(a.Priority) != PriorityRank(b.Priority) {
 				return PriorityRank(a.Priority) < PriorityRank(b.Priority)
@@ -88,13 +88,13 @@ func SortItems(items []*Item, key string, order []string, reverse bool) {
 			if l, decided := ageLess(a, b); decided {
 				return l
 			}
-			return a.ID < b.ID
+			return idLess(a, b)
 		case "updated":
 			ua, ub := a.Updated(), b.Updated()
 			if ua != ub {
 				return ua > ub
 			}
-			return a.ID < b.ID
+			return idLess(a, b)
 		default:
 			return rankLess(a, b)
 		}

@@ -60,7 +60,9 @@ func (a *App) backlogStore() (*backlog.Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	return backlog.NewStore(root), nil
+	store := backlog.NewStore(root)
+	store.Warnf = a.note
+	return store, nil
 }
 
 // escalationStore resolves the root and returns an escalation store.

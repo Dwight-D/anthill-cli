@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -18,8 +19,9 @@ var defaultWorkstreams = []string{"bugs", "cli", "dev", "process"}
 func (a *App) newInitCommand() *cobra.Command {
 	var extra []string
 	var force bool
+	var keyPrefix string
 	cmd := &cobra.Command{
-		Use:   "init",
+		Use:   "init [--key-prefix XXX]",
 		Short: "Scaffold a fresh .anthill/ tree",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -38,6 +40,13 @@ func (a *App) newInitCommand() *cobra.Command {
 			anthill := filepath.Join(target, ".anthill")
 			if _, err := os.Stat(anthill); err == nil && !force {
 				return preconditionErr(".anthill/ already exists at " + target + "; pass --force to populate without clobbering")
+			}
+			if keyPrefix == "" {
+				keyPrefix = backlog.DefaultKeyPrefix(target)
+			}
+			keyPrefix = strings.ToUpper(strings.TrimSpace(keyPrefix))
+			if !backlog.ValidPrefix(keyPrefix) {
+				return usageErr("--key-prefix must be 2 to 5 letters (e.g. ANT)")
 			}
 			streams := append([]string{}, defaultWorkstreams...)
 			for _, w := range extra {
@@ -58,6 +67,8 @@ func (a *App) newInitCommand() *cobra.Command {
 				}
 			}
 			ws := "---\n" +
+				"schema: " + strconv.Itoa(backlog.CurrentSchema) + "\n" +
+				"key-prefix: " + keyPrefix + "\n" +
 				"sweep-order: " + strings.Join(streams, ", ") + "\n" +
 				"never-implicit:\n" +
 				"change-types: doc, tooling, bugfix, audit, verify, rename, removal, design, subjective\n" +
@@ -76,17 +87,26 @@ func (a *App) newInitCommand() *cobra.Command {
 					return internalErr(err.Error())
 				}
 			}
+			// An existing workstreams.md (a scaffolded tree) may still carry the
+			// template's unfilled key-prefix placeholder: fill it in place.
+			store := backlog.NewStore(target)
+			if have, err := store.KeyPrefix(); err == nil && have == "" {
+				if err := store.StampKeyPrefix(keyPrefix); err != nil {
+					return internalErr(err.Error())
+				}
+			}
 			if a.json {
 				return a.emitJSON(map[string]any{
-					"root": target, "workstreams": streams, "initialized": true,
+					"root": target, "workstreams": streams, "key-prefix": keyPrefix, "initialized": true,
 				})
 			}
-			a.note("initialized .anthill/ at %s (workstreams: %s)", target, strings.Join(streams, ", "))
+			a.note("initialized .anthill/ at %s (workstreams: %s; key-prefix %s)", target, strings.Join(streams, ", "), keyPrefix)
 			return nil
 		},
 	}
 	cmd.Flags().StringArrayVar(&extra, "workstream", nil, "seed an extra workstream (repeatable)")
 	cmd.Flags().BoolVar(&force, "force", false, "populate an existing dir without clobbering present files")
+	cmd.Flags().StringVar(&keyPrefix, "key-prefix", "", "item key prefix, 2-5 letters (default: first three letters of the root dir name)")
 	return cmd
 }
 

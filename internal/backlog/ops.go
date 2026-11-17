@@ -85,6 +85,8 @@ func (it *Item) Field(key string) string {
 		return it.DeliveredAt
 	case "closed-at":
 		return it.ClosedAt
+	case "former-id":
+		return it.FormerID
 	case "ready":
 		if it.Ready() {
 			return "true"
@@ -104,7 +106,7 @@ var FieldNames = []string{
 	"id", "title", "summary", "value", "workstream", "status", "dispatch",
 	"disposition", "priority", "reporter", "change-type", "risk", "verify",
 	"source", "hint", "note", "created-at", "triaged-at", "claimed-at",
-	"claimed-by", "session", "delivered-at", "closed-at", "path", "ready", "active",
+	"claimed-by", "session", "delivered-at", "closed-at", "former-id", "path", "ready", "active",
 }
 
 // IsFieldName reports whether key is a valid --fields name.

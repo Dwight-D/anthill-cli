@@ -307,6 +307,65 @@ func (s *Store) appendLog(r *Record, word, outcome string) error {
 	return mdfile.WriteAtomic(path, []byte(content))
 }
 
+// RewriteItemRefs points every record whose `item:` names a key of mapping at
+// the mapped value, editing only that frontmatter line so the file is
+// otherwise untouched byte for byte. dryRun reports without writing. It
+// returns one line per record: "escalations/<id>.md: item <old> → <new>".
+func (s *Store) RewriteItemRefs(mapping map[string]string, dryRun bool) ([]string, error) {
+	if len(mapping) == 0 {
+		return nil, nil
+	}
+	recs, err := s.LoadAll()
+	if err != nil {
+		return nil, err
+	}
+	var out []string
+	for _, r := range recs {
+		to, ok := mapping[r.Item]
+		if !ok || to == r.Item {
+			continue
+		}
+		out = append(out, fmt.Sprintf("escalations/%s.md: item %s → %s", r.ID, r.Item, to))
+		if dryRun {
+			continue
+		}
+		data, err := os.ReadFile(r.Path)
+		if err != nil {
+			return out, err
+		}
+		rewritten, changed := replaceFrontmatterItem(string(data), to)
+		if !changed {
+			continue
+		}
+		if err := mdfile.WriteAtomic(r.Path, []byte(rewritten)); err != nil {
+			return out, err
+		}
+	}
+	return out, nil
+}
+
+// replaceFrontmatterItem rewrites the value of the `item:` line inside the
+// leading frontmatter block, preserving every other byte (line endings
+// included). changed is false when no such line exists.
+func replaceFrontmatterItem(content, to string) (string, bool) {
+	lines := strings.SplitAfter(content, "\n")
+	if len(lines) == 0 || strings.TrimRight(lines[0], "\r\n \t") != "---" {
+		return content, false
+	}
+	for i := 1; i < len(lines); i++ {
+		body := strings.TrimRight(lines[i], "\r\n")
+		if strings.TrimRight(body, " \t") == "---" {
+			return content, false
+		}
+		if strings.HasPrefix(body, "item:") {
+			eol := lines[i][len(body):]
+			lines[i] = "item: " + to + eol
+			return strings.Join(lines, ""), true
+		}
+	}
+	return content, false
+}
+
 func firstLine(s string) string {
 	if i := strings.IndexByte(s, '\n'); i >= 0 {
 		return strings.TrimSpace(s[:i])

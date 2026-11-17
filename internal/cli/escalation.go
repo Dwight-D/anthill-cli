@@ -2,6 +2,8 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -37,6 +39,23 @@ func (a *App) newEscalationRaise() *cobra.Command {
 			store, err := a.escalationStore()
 			if err != nil {
 				return err
+			}
+			if item != "" {
+				// With a backlog at the root the item must resolve; the record
+				// stores the canonical key.
+				bstore, err := a.backlogStore()
+				if err != nil {
+					return err
+				}
+				if _, statErr := os.Stat(filepath.Join(bstore.Root(), ".anthill", "backlog")); statErr == nil {
+					it, err := bstore.Find(item)
+					if err != nil {
+						e := wrapStoreErr(err)
+						e.ID = item
+						return e
+					}
+					item = it.ID
+				}
 			}
 			r, err := store.Raise(escalation.RaiseParams{
 				To: to, From: from, Item: item, Question: question,
