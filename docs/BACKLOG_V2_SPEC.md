@@ -403,7 +403,9 @@ classic hooks. Two mechanisms, which can coexist in its `hooks/hooks.json`:
   `transcript_path`, `cwd`, `tool_input.command`, `tool_response.stdout`.
   The script parses the verb and id from the command and runs
   `anthill session link --session … --transcript … --cwd … --item … --verb …`.
-  It does not see the agent id.
+  The payload also carries `agent_id` when a subagent made the call
+  (verified 2026-11-17 in the plugin typings), so the script passes `--agent`
+  and `--role worker` in that case.
 - **Mod `tool.call` handler** in `register.tsx`: sees `e.agentId` (set for
   subagents, undefined for the main session) and the same tool args, so it
   can key the ledger on `(session_id, agent_id)`, and it can render a
