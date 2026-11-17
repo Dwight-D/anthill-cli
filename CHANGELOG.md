@@ -2,6 +2,48 @@
 
 Release notes for the Anthill CLI. Newest first.
 
+## Unreleased
+
+### Changed — backlog schema 2 (breaking)
+
+The backlog follows `docs/BACKLOG_V2_SPEC.md`.
+
+- **Item schema.** New fields `summary`, `dispatch`
+  (`proposed|approved|fast-tracked`), `reporter` (`user|supervisor|worker`),
+  `created-at`, `triaged-at`, `claimed-by`, `session`, `delivered-at`,
+  `closed-at`. `status` is `new|triaged|in-progress|validation|done|blocked|
+  parked|discarded`; `disposition` is `auto|design|interactive|open`;
+  `priority` gains `low`. `value-verdict` is dropped (its rationale lives in
+  the body's `## Triage`). `ready` = triaged + dispatch approved/fast-tracked
+  + disposition auto + a real verify; `active` = in-progress or validation.
+- **Body sections.** New items get `## Description`, `## Acceptance`,
+  `## Triage`, `## Evidence`, `## Log`; every transition appends a `## Log`
+  line, `deliver` appends to `## Evidence`.
+- **Lifecycle verbs.** `triage`, `deliver`, `block`/`unblock [--release]`,
+  `release`, `park`/`unpark`, `fast-track`, `unapprove`; `approve` sets
+  dispatch and takes several ids (no `--yes`); `claim` stamps `claimed-by`
+  (`--by`, `ANTHILL_ACTOR`, role:session, OS user) and `session`
+  (`--session`, `CLAUDE_CODE_SESSION_ID`); `close` takes
+  `--done|--reject|--discard|--remove` (`--block` moved to `block`). Done
+  items are archived in `backlog/done/`, discarded items in
+  `backlog/discarded/`; `anthill backlog prune` purges `discarded/`.
+- **`set`** accepts only the free fields; `status=` and `dispatch=` are
+  refused (exit 3).
+- **`new`** gains `--summary`, `--description`/`--description-file`,
+  `--reporter`, and `--priority low`.
+- **`list`** gains filters for every axis, `--search`, the `--active` and
+  `--all` presets, `--sort rank|priority|age|updated|id`, `--reverse`,
+  `--limit`, `--fields`. `next` and `claim --next` pick by rank.
+- **`validate` / `doctor`** share one rule set and list every violation as
+  `<id>: <rule>: <message>` (`--json`: a `violations` array). `--strict`
+  promotes the change-type vocabulary warning to a violation.
+
+**Consumer action:** after upgrading the CLI, run `anthill backlog migrate`
+(preview with `--dry-run`). It rewrites every item to schema 2 in place,
+idempotently, and stamps `schema: 2` into `backlog/workstreams.md`; until
+then `validate` refuses the tree and points at `migrate`. Then run
+`anthill backlog validate` and complete the triage fields it lists.
+
 ## 0.0.10 — 2026-11-16
 
 ### Changed

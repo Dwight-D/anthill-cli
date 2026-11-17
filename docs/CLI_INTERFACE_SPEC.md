@@ -9,6 +9,12 @@ are collected in [Open questions](#7-open-questions-for-the-user).
 
 Module: `github.com/Dwight-D/anthill-cli`. Binary: `anthill`.
 
+**Backlog contract.** The backlog item schema, its lifecycle, and every
+`anthill backlog` verb are specified in [`BACKLOG_V2_SPEC.md`](BACKLOG_V2_SPEC.md)
+(schema 2). This document carries the global conventions (§2), the command
+tree (§3), the escalation record contract (§3.9–§3.15), the lifecycle helpers
+(§3.16–§3.17), id generation (§4), and the TUI (§5).
+
 ---
 
 ## 1. Overview & principles
@@ -124,15 +130,23 @@ anthill
 ├── doctor*                     environment + integrity health check
 ├── validate [--strict]         validate the whole tree (alias of backlog+escalation validate)
 ├── version                     print version (also --version on root)
-├── backlog
-│   ├── new                     create an intake item
-│   ├── list                    list items (filters: --workstream --untriaged --ready --status)
-│   ├── show* <id>              print one item
-│   ├── set <id> key=value…     mutate frontmatter; workstream= moves the file
-│   ├── next                    print the next dispatchable item (sweep order)
-│   ├── claim <id> | --next     atomically mark an item in-progress
-│   ├── close <id> ["reason"] --done|--discard|--remove|--block
-│   └── validate [--strict]     validate backlog items
+├── backlog                     (contract: BACKLOG_V2_SPEC.md §6)
+│   ├── new                     create an intake item (status new)
+│   ├── list                    filter / sort / project items
+│   ├── show <id>               print one item
+│   ├── next                    print the highest-ranked ready item
+│   ├── triage <id> k=v…        new → triaged, moves the file into its workstream
+│   ├── approve|fast-track|unapprove <id>…   set dispatch (user-gated)
+│   ├── claim <id> | --next     triaged → in-progress, stamps claimed-by / session
+│   ├── deliver <id> --evidence "…"          in-progress → validation (claimant only)
+│   ├── block <id> "reason" / unblock <id> [--release]
+│   ├── release <id>            in-progress → triaged, drops the claim
+│   ├── park <id> "reason" / unpark <id>
+│   ├── close <id> --done|--reject|--discard|--remove ["reason"]
+│   ├── set <id> key=value…     free fields only; workstream= moves the file
+│   ├── validate [--strict]     list every violation as <id>: <rule>: <message>
+│   ├── migrate [--dry-run]     upgrade items to schema 2 (idempotent)
+│   └── prune [--older-than d] [--dry-run]   purge discarded/
 └── escalation
     ├── raise                   create an escalation record
     ├── list                    list records (filters: --to --status --item)
@@ -148,221 +162,13 @@ Human output · `--json` output · Exit codes.**
 
 ---
 
-### 3.1 `anthill backlog new`
+### 3.1–3.8 `anthill backlog …`
 
-- **Purpose.** Submit an intake item. Enforces the intake contract: a `title`
-  and a `value` are the whole required ask.
-- **Args.** none (all via flags).
-- **Flags.** `--title <str>` (required), `--value <str>` (required),
-  `--source <str>` (optional), `--hint <ws>` (optional, non-binding submitter
-  hint), `--priority high|normal` (optional; triage normally sets this).
-- **Reads.** `intake/` and all workstream dirs (to compute a unique id).
-- **Writes.** `intake/<id>.md` with frontmatter `title`, `value`, optional
-  `source`, optional `hint`, `status: idea`. No `workstream` key (absent while
-  in intake).
-- **Human output.** `created <id>` on stderr; the id on stdout.
-- **`--json`.** The created item object (see [§4](#4-frontmatter--id-ownership)
-  for the object shape), including its generated `id` and file `path`.
-- **Exit codes.** 0; 2 (missing `--title`/`--value`); 3 (title slugifies to
-  empty).
-
-> Reconciliation: `bindings.md` sketches `--backlog <hint>` but the schema
-> field is `hint`. This spec names the flag `--hint` to match the field.
-> Flagged in [Open questions](#7-open-questions-for-the-user).
-
----
-
-### 3.2 `anthill backlog list`
-
-- **Purpose.** Enumerate items across intake + workstreams.
-- **Args.** none.
-- **Flags.**
-  - `--workstream <ws>` — restrict to one workstream directory.
-  - `--untriaged` — only items in `intake/` (no `workstream`).
-  - `--ready` — only dispatchable items (`status: approved` + non-empty
-    `verify`).
-  - `--status <s>` — filter by lifecycle status (repeatable).
-  - `--sort sweep|priority|id` — default `sweep` (workstream sweep-order, then
-    priority, then id).
-- **Reads.** `intake/`, workstream dirs, `workstreams.md` (for sweep order).
-- **Writes.** none.
-- **Human output.** A table: id · workstream · status · priority · title
-  (truncated). Empty set → a note on stderr, exit 0.
-- **`--json`.** Array of item objects, each including `ready: bool` (derived).
-- **Exit codes.** 0; 4 (`--workstream` names a non-existent workstream).
-
----
-
-### 3.3 `anthill backlog show` *(proposed helper)*
-
-- **Purpose.** Print a single item's full frontmatter + body. Consumers
-  (dispatch's "full body" claim output, triage's dedup read) need one item by
-  id without shelling out to `cat`, and reading via the CLI guarantees the
-  derived fields (`ready`, `path`) are computed the same way as everywhere else.
-- **Args.** `<id>` (required).
-- **Flags.** `--body/--no-body` (include markdown body; default include).
-- **Reads.** the item file.
-- **Writes.** none.
-- **Human output.** The rendered item.
-- **`--json`.** One item object, with `body` as a string field.
-- **Exit codes.** 0; 4 (not found).
-
----
-
-### 3.4 `anthill backlog set`
-
-- **Purpose.** Mutate one or more frontmatter keys on an item, invariant-checked
-  as a single atomic write. This is the triage workhorse.
-- **Args.** `<id>` then one or more `key=value` pairs.
-- **Flags.** none (all mutation is positional `key=value`).
-- **Reads.** the item file; workstream dirs (to validate a `workstream=` target
-  and re-check id uniqueness after a move).
-- **Writes.** the item file. **File-move semantics:** setting
-  `workstream=<ws>` moves the file from its current directory into
-  `backlog/<ws>/` (git-friendly rename, id/filename unchanged). Setting
-  `workstream=` while the item is in intake also strips any `hint` key (hint is
-  removed on triage per schema). All other keys are updated in place.
-- **Validation.** Every changed key is checked against the schema
-  ([§4](#4-frontmatter--id-ownership)): enum fields must hold a legal value; a
-  `workstream=` target must be a real workstream directory; `id`, `title`, and
-  `value` are not settable via `set` (id is immutable; title/value edits are a
-  deliberate carve-out — see open questions). Illegal write → exit 3, file
-  untouched.
-- **Human output.** `set <id>: <k>=<v> …` on stderr; on a move, also
-  `moved <id> → <ws>/`.
-- **`--json`.** The updated item object.
-- **Exit codes.** 0; 2 (no `key=value` given, malformed pair); 3 (illegal
-  value / immutable key / unknown workstream target — validation class); 4
-  (item not found).
-
-> Approval gate: whether `set <id> status=approved` is permitted at all, or
-> must go through a human-only path, is a real fork —
-> [Open questions](#7-open-questions-for-the-user).
-
----
-
-### 3.5 `anthill backlog next`
-
-- **Purpose.** Print the single next dispatchable item without claiming it, in
-  sweep order. This is `dispatch`'s selection step.
-- **Args.** none.
-- **Flags.** `--workstream <ws>` — restrict to one stream (else full sweep
-  order from `workstreams.md`, skipping `never-implicit` streams).
-- **Reads.** workstream dirs, `workstreams.md`.
-- **Writes.** none.
-- **Human output.** The chosen item's id + title, or `no ready items` on
-  stderr with exit 0.
-- **`--json`.** The chosen item object, or `null` when none ready.
-- **Exit codes.** 0 (including the empty case); 4 (`--workstream` unknown).
-
-> Judgment: the empty case exits 0 with a `null`/note rather than a non-zero
-> code, so a sweep loop terminates cleanly on "nothing ready" without treating
-> it as an error. Alternative (exit 4 on empty) rejected because emptiness is a
-> normal steady state, not a failure.
-
----
-
-### 3.6 `anthill backlog claim`
-
-- **Purpose.** Atomically take ownership of an item for implementation:
-  transition it to `status: in-progress` so no other agent picks it up. This is
-  the authorization boundary — `dispatch` claims, the worker never does.
-- **Args.** `<id>` OR `--next`.
-- **Flags.**
-  - `--next` — claim the item `next` would select (mutually exclusive with a
-    positional id).
-  - `--workstream <ws>` — scope for `--next`.
-  - `--force` — claim even if the item is not ready (a human naming an item is
-    an explicit override of the readiness gate) or is already `in-progress`
-    (reclaim an orphan).
-- **Reads.** the item (or the sweep, for `--next`).
-- **Writes.** the item file: `status: in-progress`, plus a `claimed` marker
-  (see the claim-mechanism fork). Atomic compare-and-set: read current status,
-  write only if it is still the expected value, else conflict.
-- **Human output.** the claimed item's id + full body on stdout (dispatch
-  packages this into the worker brief).
-- **`--json`.** The claimed item object.
-- **Exit codes.** 0; 4 (id not found; `--next` found nothing → see note); 5
-  (already claimed by someone else, no `--force`); 6 (not ready and no
-  `--force`).
-
-> `--next` with an empty ready set: exit 4 (there is nothing to claim), distinct
-> from `next`'s exit-0 empty, because `claim` was asked to produce a claim and
-> could not. Flagged for confirmation.
-
----
-
-### 3.7 `anthill backlog close`
-
-- **Purpose.** Terminate or block a claimed item. Exactly one disposition flag
-  is required.
-- **Args.** `<id> ["<reason>"]`. The reason is an optional second positional;
-  when omitted, the CHANGELOG line falls back to the item title (and `--block`
-  leaves `note` empty).
-- **Flags** (mutually exclusive, one required; pure booleans — a disposition
-  flag never consumes a value, so the id parses as the positional in either
-  order: `close <id> --done` and `close --done <id>` are equivalent):
-  - `--done` — completed successfully.
-  - `--discard` — decided not worth doing.
-  - `--remove` — obsolete / superseded / rejected.
-  - `--block` — cannot proceed right now (dependency, escalation).
-- **Reads.** the item, `CHANGELOG.md`.
-- **Writes.**
-  - `--done` / `--discard` / `--remove` are **terminal**: delete the item file
-    and append one line to `backlog/CHANGELOG.md`
-    (`<date> <id> — done|discarded|removed: <reason/title>`).
-  - `--block` is **non-terminal**: the file stays in place, `status: blocked`,
-    and the reason is written to the `note` field (e.g.
-    `escalated: <file>`). No CHANGELOG line — the item is not closed, it is
-    parked. It is named under `close` because it is the terminating verb of a
-    *dispatch attempt*, not of the item.
-- **Human output.** `closed <id> (done)` / `blocked <id>: <reason>` on stderr.
-- **`--json`.** `{ "id": …, "disposition": "done|discard|remove|block",
-  "changelog": true|false }`.
-- **Exit codes.** 0; 2 (no disposition flag, or more than one); 4 (not found);
-  6 (item is not claimed / not in a closeable state — configurable, see fork).
-
-> The done/discard/remove-vs-block asymmetry (terminal + CHANGELOG vs in-place
-> annotate) is a deliberate reading of `bindings.md` and the `dispatch` skill
-> ("blocked → block in place"). Confirm in open questions.
-
----
-
-### 3.8 `anthill backlog validate`
-
-- **Purpose.** Certify the backlog tree as schema-well-formed. Run at the end of
-  a triage pass and in CI.
-- **Args.** none.
-- **Flags.** `--strict` (add the cross-field / consistency checks below).
-- **Reads.** all item files, `workstreams.md`.
-- **Writes.** none.
-- **Checks (default).**
-  1. Every item's frontmatter parses and carries the required keys for its
-     lifecycle stage (intake: `title`, `value`, `status`; triaged: adds
-     `workstream`, `change-type`, `risk`, `verify`, `value-verdict`,
-     `disposition`).
-  2. Every enum field holds a legal value. `change-type` is not enum-checked
-     here: if `workstreams.md` declares a `change-types` vocabulary, an item
-     using a value outside it produces a **warning** (never a violation); with
-     no declared vocabulary, any change-type is accepted.
-  3. `id` == filename (minus `.md`); ids unique across `intake/` + all
-     workstream dirs.
-  4. An item's directory matches its `workstream` field (or it is in `intake/`
-     with no `workstream`).
-- **Checks (added by `--strict`).**
-  5. Ready-consistency: `status: approved` ⇒ non-empty `verify`.
-  6. Disposition coherence: `disposition: AUTO` ⇒ `verify` != `none` AND
-     `change-type` is not listed in `workstreams.md` `never-auto-change-types`
-     (the project-declared AUTO-forbidden set).
-  7. No `hint` key survives on a triaged item.
-  8. Any `escalated: <file>` note points at an existing escalation record.
-  9. No stray files in workstream dirs that are not valid items.
-- **Human output.** `ok: N items` or a per-item list of violations on stderr,
-  followed by any advisory `warn:` lines (e.g. out-of-vocabulary change-types).
-- **`--json`.** `{ "ok": bool, "checked": N, "violations": [ { "id", "check",
-  "message" } ], "warnings": [ { "id", "check", "message" } ] }`. Warnings never
-  set `ok: false`.
-- **Exit codes.** 0 (clean, warnings allowed); 3 (one or more violations).
+Specified in [`BACKLOG_V2_SPEC.md`](BACKLOG_V2_SPEC.md): the item schema (§1),
+the lifecycle and its verbs (§2), `disposition` (§3), `reporter` (§4),
+claimant identity (§5), and the full verb surface with flags (§6). Every
+backlog verb follows the global conventions of §2 here: `--json` output,
+stdout/stderr split, and the exit-code table.
 
 ---
 
@@ -506,11 +312,14 @@ Human output · `--json` output · Exit codes.**
 
 - **Purpose.** One-shot environment + integrity check: `.anthill/` is
   discoverable, required config files present, `workstreams.md` sweep-order
-  names existing directories, `backlog validate --strict` clean, `escalation`
-  records well-formed, no answered-but-unapplied records (the failure mode the
+  names existing directories, the backlog clean under the same rule set as
+  `anthill backlog validate` (every violation listed under the
+  `backlog-valid` check as `<id>: <rule>: <message>`), `escalation` records
+  well-formed, no answered-but-unapplied records (the failure mode the
   escalate skill calls out). Read-only.
 - **Flags.** `--strict` (fail on warnings too).
-- **`--json`.** `{ "ok": bool, "checks": [ { "name", "ok", "detail" } ] }`.
+- **`--json`.** `{ "ok": bool, "checks": [ { "section", "name", "ok", "detail" } ],
+  "violations": [ { "id", "rule", "message" } ] }`.
 - **Exit codes.** 0 (healthy); 3 (integrity problem).
 
 ---
@@ -519,43 +328,11 @@ Human output · `--json` output · Exit codes.**
 
 ### The item object
 
-Canonical frontmatter (from `bindings.md`, kept verbatim as the schema):
-
-| Key | Type / enum | Notes |
-|-----|-------------|-------|
-| `workstream` | dir name | absent in intake; set at triage (moves the file) |
-| `title` | string | one line |
-| `value` | string | the pain removed / potential unlocked |
-| `source` | string | optional |
-| `hint` | ws name | optional; submit-time only, removed on triage |
-| `change-type` | project vocabulary declared in `workstreams.md` `change-types` | not hardcoded; an out-of-vocabulary value warns, never fails |
-| `risk` | `additive\|reversible\|behavior-change\|subjective` | |
-| `verify` | string | headless acceptance test, or `none` |
-| `value-verdict` | `ADVANCE\|HOLD\|DISCARD — <why>` | |
-| `disposition` | `AUTO\|REVIEW\|DISCARD` | AUTO needs non-`none` verify + non-never-auto change-type |
-| `status` | `idea\|approved\|in-progress\|blocked\|parked\|done` | |
-| `priority` | `high\|normal` | |
-| `note` | string | free text; qualifiers: `expedited`, `needs-spec`, `remainder`, … |
-
-Derived (computed, never stored): `id` (== filename stem), `path`, `ready`
-(`status == approved && verify != "" && verify != "none"`).
-
-### Invariant-checking on every write
-
-`new`, `set`, and `claim`/`close` share one validation gate. Before persisting,
-the CLI:
-
-1. Parses the resulting frontmatter and rejects unknown keys (typo guard) and
-   illegal enum values → exit 3, original file untouched (write to a temp file
-   + atomic rename, so a rejected or crashed write never leaves a half-file).
-   `change-type` is exempt from this reject: its vocabulary is the project's
-   (declared in `workstreams.md`), so a write never fails on it — divergence is
-   surfaced as a non-failing warning by `validate`/`doctor` instead.
-2. Enforces stage-required keys (intake vs triaged, per
-   [§3.8](#38-anthill-backlog-validate)).
-3. Enforces id immutability and uniqueness.
-4. On a `workstream=` change, performs the directory move as part of the same
-   atomic operation.
+The backlog item's frontmatter, body sections, derived fields, and the
+per-write validation gate are specified in
+[`BACKLOG_V2_SPEC.md`](BACKLOG_V2_SPEC.md) §1–§2. Every write is atomic
+(temp file + rename), so a rejected or crashed write never leaves a
+half-file.
 
 ### Id generation
 
@@ -563,8 +340,8 @@ the CLI:
   characters → a single `-`; leading/trailing `-` stripped; truncated to **≤50
   chars** (truncate on a hyphen boundary where possible, never leaving a
   trailing hyphen).
-- **Collision** (slug already used anywhere across `intake/` + workstream
-  dirs): append a numeric suffix `-2`, `-3`, … choosing the lowest free
+- **Collision** (slug already used anywhere across `intake/`, the workstream
+  dirs, `done/`, and `discarded/`): append a numeric suffix `-2`, `-3`, … choosing the lowest free
   integer. The suffix counts toward the 50-char budget (truncate the base
   further if needed).
 - **Immutable**: the id is assigned once at `new` and never changes — not on
@@ -636,8 +413,8 @@ in the detail pane.
 | `↑/↓` `j/k` | move selection / scroll detail | — |
 | `tab`, `enter`/`esc` | switch pane focus | — |
 | `r` | reload from disk | `backlog list` |
-| `a` | approve the selected item | `backlog approve <id> --yes` |
-| `d` | close as done | `backlog close <id> --done` |
+| `a` | approve the selected item (dispatch approved) | `backlog approve <id>` |
+| `d` | close as done (item in validation) | `backlog close <id> --done` |
 | `x` | close as discard (confirm: `y`) | `backlog close <id> --discard` |
 | `X` | remove (confirm: `y`) | `backlog close <id> --remove` |
 | `m` / `1..9` | cycle / select mode | — |

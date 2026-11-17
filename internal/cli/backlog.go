@@ -34,6 +34,8 @@ func (a *App) newBacklogCommand() *cobra.Command {
 		a.newBacklogDispatchVerb("unapprove", backlog.DispatchProposed, "Return items to dispatch: proposed"),
 		a.newBacklogClose(),
 		a.newBacklogValidate(),
+		a.newBacklogMigrate(),
+		a.newBacklogPrune(),
 	)
 	return cmd
 }
