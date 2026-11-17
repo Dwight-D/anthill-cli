@@ -13,16 +13,16 @@ import (
 	"github.com/Dwight-D/anthill-cli/internal/session"
 )
 
-// nowFixture builds a throwaway tree:
+// nowFixture builds a throwaway schema-3 tree (key prefix ANT):
 //
-//	cli/working-item   in-progress, claimed by cli-worker, session 0123456789abcdef
-//	cli/review-item    validation, claimed by w2, session fedcba9876543210
-//	cli/ready-item     triaged, approved, auto + verify (ready)
-//	bugs/stuck-item    blocked
-//	intake/idea-one    new, proposed
+//	cli/0001-working-item.md   ANT-1 in-progress, claimed by cli-worker, session 0123456789abcdef
+//	cli/0002-review-item.md    ANT-2 validation, claimed by w2, session fedcba9876543210
+//	cli/0003-ready-item.md     ANT-3 triaged, approved, auto + verify (ready)
+//	bugs/0004-stuck-item.md    ANT-4 blocked
+//	intake/0005-idea-one.md    ANT-5 new, proposed
 //
-// with ledger records: working-item last seen long ago; review-item with no
-// last-seen but a transcript whose mtime is two hours old.
+// with ledger records (keyed by item key): ANT-1 last seen long ago; ANT-2
+// with no last-seen but a transcript whose mtime is two hours old.
 func nowFixture(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
@@ -41,16 +41,16 @@ func nowFixture(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	write(filepath.Join(dir, "workstreams.md"), "---\nschema: 2\nsweep-order: cli, bugs\n---\n")
-	write(filepath.Join(dir, "cli/working-item.md"), "---\nworkstream: cli\ntitle: Working item\nsummary: Doing the work\nvalue: v\nstatus: in-progress\ndispatch: approved\ndisposition: auto\nverify: go test\nclaimed-by: cli-worker\nsession: 0123456789abcdef\ncreated-at: \"2026-11-01T00:00:00Z\"\n---\n")
-	write(filepath.Join(dir, "cli/review-item.md"), "---\nworkstream: cli\ntitle: Review item\nvalue: v\nstatus: validation\ndispatch: approved\ndisposition: auto\nverify: go test\nclaimed-by: w2\nsession: fedcba9876543210\ndelivered-at: \"2026-11-02T00:00:00Z\"\ncreated-at: \"2026-11-01T00:00:00Z\"\n---\n")
-	write(filepath.Join(dir, "cli/ready-item.md"), "---\nworkstream: cli\ntitle: Ready item\nvalue: v\nstatus: triaged\ndispatch: approved\ndisposition: auto\nverify: go test\ncreated-at: \"2026-11-02T00:00:00Z\"\n---\n")
-	write(filepath.Join(dir, "bugs/stuck-item.md"), "---\nworkstream: bugs\ntitle: Stuck item\nvalue: v\nstatus: blocked\ndispatch: approved\nclaimed-by: w3\ncreated-at: \"2026-11-01T00:00:00Z\"\n---\n")
-	write(filepath.Join(dir, "intake/idea-one.md"), "---\ntitle: Idea one\nvalue: v\nstatus: new\ndispatch: proposed\ncreated-at: \"2026-11-01T00:00:00Z\"\n---\n")
+	write(filepath.Join(dir, "workstreams.md"), "---\nschema: 3\nkey-prefix: ANT\nsweep-order: cli, bugs\n---\n")
+	write(filepath.Join(dir, "cli/0001-working-item.md"), "---\nworkstream: cli\ntitle: Working item\nsummary: Doing the work\nvalue: v\nstatus: in-progress\ndispatch: approved\ndisposition: auto\nverify: go test\nclaimed-by: cli-worker\nsession: 0123456789abcdef\ncreated-at: \"2026-11-01T00:00:00Z\"\n---\n")
+	write(filepath.Join(dir, "cli/0002-review-item.md"), "---\nworkstream: cli\ntitle: Review item\nvalue: v\nstatus: validation\ndispatch: approved\ndisposition: auto\nverify: go test\nclaimed-by: w2\nsession: fedcba9876543210\ndelivered-at: \"2026-11-02T00:00:00Z\"\ncreated-at: \"2026-11-01T00:00:00Z\"\n---\n")
+	write(filepath.Join(dir, "cli/0003-ready-item.md"), "---\nworkstream: cli\ntitle: Ready item\nvalue: v\nstatus: triaged\ndispatch: approved\ndisposition: auto\nverify: go test\ncreated-at: \"2026-11-02T00:00:00Z\"\n---\n")
+	write(filepath.Join(dir, "bugs/0004-stuck-item.md"), "---\nworkstream: bugs\ntitle: Stuck item\nvalue: v\nstatus: blocked\ndispatch: approved\nclaimed-by: w3\ncreated-at: \"2026-11-01T00:00:00Z\"\n---\n")
+	write(filepath.Join(dir, "intake/0005-idea-one.md"), "---\ntitle: Idea one\nvalue: v\nstatus: new\ndispatch: proposed\ncreated-at: \"2026-11-01T00:00:00Z\"\n---\n")
 
 	sdir := filepath.Join(root, ".anthill", "sessions")
 	write(filepath.Join(sdir, "0123456789abcdef.json"),
-		`{"session":"0123456789abcdef","agent":"","handle":"cli-worker","item":"working-item","role":"worker","transcript":"","cwd":"","started":"2020-01-01T00:00:00Z","last-seen":"2020-01-01T00:00:00Z"}`)
+		`{"session":"0123456789abcdef","agent":"","handle":"cli-worker","item":"ANT-1","role":"worker","transcript":"","cwd":"","started":"2020-01-01T00:00:00Z","last-seen":"2020-01-01T00:00:00Z"}`)
 	transcript := filepath.Join(root, "transcript.jsonl")
 	write(transcript, "{}\n")
 	old := time.Now().Add(-2*time.Hour - 5*time.Minute)
@@ -58,7 +58,7 @@ func nowFixture(t *testing.T) string {
 		t.Fatal(err)
 	}
 	write(filepath.Join(sdir, "fedcba9876543210.json"),
-		`{"session":"fedcba9876543210","agent":"","handle":"w2","item":"review-item","role":"worker","transcript":`+
+		`{"session":"fedcba9876543210","agent":"","handle":"w2","item":"ANT-2","role":"worker","transcript":`+
 			jsonString(transcript)+`,"cwd":"","started":"","last-seen":""}`)
 	return root
 }
@@ -82,13 +82,13 @@ func TestNowModeRows(t *testing.T) {
 		t.Fatalf("Len = %d, want 2 active items", n.Len())
 	}
 	ids := map[string]int{n.RowID(0): 0, n.RowID(1): 1}
-	wi, ok1 := ids["working-item"]
-	ri, ok2 := ids["review-item"]
+	wi, ok1 := ids["ANT-1"]
+	ri, ok2 := ids["ANT-2"]
 	if !ok1 || !ok2 {
-		t.Fatalf("rows = %v, want working-item and review-item", ids)
+		t.Fatalf("rows = %v, want ANT-1 (working) and ANT-2 (review)", ids)
 	}
 	row := n.Row(wi, 140)
-	for _, want := range []string{"working-item", "Doing the work", "in-progress", "cli-worker", "01234567", "cli"} {
+	for _, want := range []string{"ANT-1", "Doing the work", "in-progress", "cli-worker", "01234567", "cli"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("working row missing %q: %q", want, row)
 		}
@@ -109,12 +109,12 @@ func TestNowModeRows(t *testing.T) {
 		t.Errorf("top = %q", top)
 	}
 	all := strings.Join(bottom, "\n")
-	for _, want := range []string{"validation", "review-item", "ready 1", "proposed 1", "blocked 1"} {
+	for _, want := range []string{"validation", "ANT-2 · Review item", "ready 1", "proposed 1", "blocked 1"} {
 		if !strings.Contains(all, want) {
 			t.Errorf("board bottom missing %q:\n%s", want, all)
 		}
 	}
-	if strings.Contains(all, "working-item") {
+	if strings.Contains(all, "ANT-1 ") || strings.Contains(all, "Working item") {
 		t.Errorf("the validation block must list only validation items:\n%s", all)
 	}
 	if d := n.Detail(wi); !strings.Contains(d, "title:") || !strings.Contains(d, "handle:") {
@@ -126,23 +126,23 @@ func TestNowModeAgeFallback(t *testing.T) {
 	root := nowFixture(t)
 	n := loadedNow(t, root)
 	// Ledger last-seen wins: years old renders in days.
-	if age := n.Age("working-item"); !strings.HasSuffix(age, "d") {
-		t.Errorf("working-item age = %q, want days from last-seen", age)
+	if age := n.Age("ANT-1"); !strings.HasSuffix(age, "d") {
+		t.Errorf("ANT-1 (working) age = %q, want days from last-seen", age)
 	}
 	// No last-seen: the recorded transcript's mtime (≈2h ago).
-	if age := n.Age("review-item"); age != "2h" {
-		t.Errorf("review-item age = %q, want 2h from the transcript mtime", age)
+	if age := n.Age("ANT-2"); age != "2h" {
+		t.Errorf("ANT-2 (review) age = %q, want 2h from the transcript mtime", age)
 	}
 	// No ledger record at all: "-".
 	if err := os.Remove(filepath.Join(root, ".anthill", "sessions", "0123456789abcdef.json")); err != nil {
 		t.Fatal(err)
 	}
 	n = loadedNow(t, root)
-	if age := n.Age("working-item"); age != "-" {
+	if age := n.Age("ANT-1"); age != "-" {
 		t.Errorf("unrecorded age = %q, want -", age)
 	}
 	for i := 0; i < n.Len(); i++ {
-		if n.RowID(i) != "working-item" {
+		if n.RowID(i) != "ANT-1" {
 			continue
 		}
 		if _, err := n.transcript(i); err == nil {
@@ -156,18 +156,18 @@ func TestNowModeTranscriptAndRelease(t *testing.T) {
 	n := loadedNow(t, root)
 	for i := 0; i < n.Len(); i++ {
 		switch n.RowID(i) {
-		case "review-item":
+		case "ANT-2": // review-item
 			msg, err := n.transcript(i)
 			if err != nil || !strings.Contains(msg, "transcript.jsonl") {
 				t.Errorf("transcript = %q, %v", msg, err)
 			}
-		case "working-item":
+		case "ANT-1": // working-item
 			if _, err := n.release(i); err != nil {
 				t.Fatalf("release: %v", err)
 			}
 		}
 	}
-	it, err := backlog.NewStore(root).Find("working-item")
+	it, err := backlog.NewStore(root).Find("ANT-1")
 	if err != nil || it.Status != backlog.StatusTriaged {
 		t.Fatalf("after release: %v %v", it, err)
 	}
@@ -240,7 +240,7 @@ func TestNowModeInRoot(t *testing.T) {
 		t.Fatalf("[3] → mode %s, tick cmd %v", m.mode().Name(), cmd)
 	}
 	view := m.View()
-	for _, want := range []string{"3:Now", "CLAIMED-BY", "working-item", "ready 1"} {
+	for _, want := range []string{"3:Now", "CLAIMED-BY", "ANT-1", "ready 1"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("board view missing %q", want)
 		}

@@ -8,7 +8,8 @@ import (
 	"testing"
 )
 
-// newTestStore builds an initialized schema-2 .anthill tree in a temp dir.
+// newTestStore builds an initialized schema-3 .anthill tree (key prefix ANT)
+// in a temp dir.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	root := t.TempDir()
@@ -20,7 +21,7 @@ func newTestStore(t *testing.T) *Store {
 	if err := os.MkdirAll(filepath.Join(root, ".anthill", "escalations"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ws := "---\nschema: 2\nsweep-order: bugs, cli, dev, process\nnever-implicit:\n---\n"
+	ws := "---\nschema: 3\nkey-prefix: ANT\nsweep-order: bugs, cli, dev, process\nnever-implicit:\n---\n"
 	if err := os.WriteFile(filepath.Join(root, ".anthill", "backlog", "workstreams.md"), []byte(ws), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -37,8 +38,11 @@ func TestNewAndFindRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	if it.ID != "add-a-json-flag" {
-		t.Fatalf("id = %q, want add-a-json-flag", it.ID)
+	if it.ID != "ANT-1" {
+		t.Fatalf("id = %q, want ANT-1", it.ID)
+	}
+	if filepath.Base(it.Path) != "0001-add-a-json-flag.md" {
+		t.Fatalf("path = %q, want a 0001-add-a-json-flag.md file", it.Path)
 	}
 	got, err := s.Find(it.ID)
 	if err != nil {
@@ -84,10 +88,11 @@ func TestTriageMovesStripsHintAndLogs(t *testing.T) {
 	if got.Workstream != "cli" || got.Hint != "" || got.Status != StatusTriaged || got.TriagedAt == "" {
 		t.Fatalf("triage result: %+v", got)
 	}
-	if got.Path != filepath.Join(s.wsDir("cli"), it.ID+".md") {
+	name := filepath.Base(it.Path) // a move keeps the NNNN-<slug>.md filename
+	if got.Path != filepath.Join(s.wsDir("cli"), name) {
 		t.Fatalf("path = %q", got.Path)
 	}
-	if _, err := os.Stat(filepath.Join(s.intakeDir(), it.ID+".md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(s.intakeDir(), name)); !os.IsNotExist(err) {
 		t.Fatal("intake file still present")
 	}
 	if got.Sections()["Triage"] != "worth it" {
@@ -178,6 +183,9 @@ func TestNewStampsSchemaOnEmptyTree(t *testing.T) {
 	if v, _ := s.SchemaVersion(); v != CurrentSchema {
 		t.Fatalf("schema = %d, want %d", v, CurrentSchema)
 	}
+	if p, err := s.KeyPrefix(); err != nil || !ValidPrefix(p) {
+		t.Fatalf("key-prefix = %q (%v), want a derived valid prefix", p, err)
+	}
 }
 
 // writeWorkstreamsFrontmatter overwrites the store's workstreams.md with the
@@ -190,23 +198,24 @@ func writeWorkstreamsFrontmatter(t *testing.T, s *Store, fm string) {
 	}
 }
 
-// writeTriagedItem hand-writes a triaged cli/ item with the given change-type
-// and disposition (verify real, so only change-type/disposition are at play).
-func writeTriagedItem(t *testing.T, s *Store, id, changeType, disposition string) {
+// writeTriagedItem hand-writes a triaged cli/ item NNNN-<slug>.md (id ANT-n)
+// with the given change-type and disposition (verify real, so only
+// change-type/disposition are at play).
+func writeTriagedItem(t *testing.T, s *Store, n int, slug, changeType, disposition string) {
 	t.Helper()
 	content := "---\ntitle: t\nsummary: s\nvalue: v\nworkstream: cli\nstatus: triaged\ndispatch: approved\n" +
 		"disposition: " + disposition + "\npriority: normal\nreporter: user\nchange-type: " + changeType +
 		"\nrisk: additive\nverify: go test ./...\ncreated-at: \"2026-11-17T00:00:00Z\"\n---\n"
-	if err := os.WriteFile(filepath.Join(s.wsDir("cli"), id+".md"), []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(s.wsDir("cli"), FormatFilename(n, slug)), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestValidateChangeTypeVocabularyWarns(t *testing.T) {
 	s := newTestStore(t)
-	writeWorkstreamsFrontmatter(t, s, "schema: 2\nsweep-order: bugs, cli, dev, process\nchange-types: doc, tooling\n")
-	writeTriagedItem(t, s, "good", "doc", "design")
-	writeTriagedItem(t, s, "bad", "wildcard", "design")
+	writeWorkstreamsFrontmatter(t, s, "schema: 3\nkey-prefix: ANT\nsweep-order: bugs, cli, dev, process\nchange-types: doc, tooling\n")
+	writeTriagedItem(t, s, 1, "good", "doc", "design")
+	writeTriagedItem(t, s, 2, "bad", "wildcard", "design")
 
 	res, err := s.Validate(false)
 	if err != nil {
@@ -215,8 +224,8 @@ func TestValidateChangeTypeVocabularyWarns(t *testing.T) {
 	if !res.OK {
 		t.Fatalf("out-of-vocabulary change-type must not fail validation; violations=%+v", res.Violations)
 	}
-	if len(res.Warnings) != 1 || res.Warnings[0].ID != "bad" || res.Warnings[0].Rule != "change-type-vocab" {
-		t.Fatalf("expected one change-type-vocab warning for 'bad', got %+v", res.Warnings)
+	if len(res.Warnings) != 1 || res.Warnings[0].ID != "ANT-2" || res.Warnings[0].Rule != "change-type-vocab" {
+		t.Fatalf("expected one change-type-vocab warning for ANT-2 (bad), got %+v", res.Warnings)
 	}
 	res, err = s.Validate(true)
 	if err != nil {
@@ -229,8 +238,8 @@ func TestValidateChangeTypeVocabularyWarns(t *testing.T) {
 
 func TestValidateNeverAutoFromConfig(t *testing.T) {
 	s := newTestStore(t)
-	writeWorkstreamsFrontmatter(t, s, "schema: 2\nsweep-order: cli\nchange-types: doc, design\nnever-auto-change-types: design\n")
-	writeTriagedItem(t, s, "auto-design", "design", "auto")
+	writeWorkstreamsFrontmatter(t, s, "schema: 3\nkey-prefix: ANT\nsweep-order: cli\nchange-types: doc, design\nnever-auto-change-types: design\n")
+	writeTriagedItem(t, s, 1, "auto-design", "design", "auto")
 
 	res, err := s.Validate(false)
 	if err != nil {
@@ -238,7 +247,7 @@ func TestValidateNeverAutoFromConfig(t *testing.T) {
 	}
 	found := false
 	for _, v := range res.Violations {
-		if v.Rule == "disposition-coherence" && v.ID == "auto-design" {
+		if v.Rule == "disposition-coherence" && v.ID == "ANT-1" {
 			found = true
 		}
 	}

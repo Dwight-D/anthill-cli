@@ -3,16 +3,16 @@ package e2e_test
 import "testing"
 
 // TestShowJSON covers `backlog show <id> --json` returning one item object with
-// a body string field (spec §3.3).
+// a body string field (spec §3.3). The JSON id is the canonical key.
 func TestShowJSON(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "show-item", readyFields("Show item", "cli"), "The full body text.")
-	r := runIn(t, root, "--json", "backlog", "show", "show-item")
+	writeItem(t, root, "cli", 1, "show-item", readyFields("Show item", "cli"), "The full body text.")
+	r := runIn(t, root, "--json", "backlog", "show", key(1))
 	wantExit(t, r, 0)
 
 	obj := jsonObj(t, r.stdout)
-	if obj["id"] != "show-item" {
-		t.Fatalf("json id = %v, want show-item", obj["id"])
+	if obj["id"] != key(1) {
+		t.Fatalf("json id = %v, want %s", obj["id"], key(1))
 	}
 	body, ok := obj["body"].(string)
 	if !ok {
@@ -24,8 +24,8 @@ func TestShowJSON(t *testing.T) {
 // TestShowNoBody covers --no-body suppressing the markdown body.
 func TestShowNoBody(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "nobody-item", readyFields("Nobody item", "cli"), "Secret body.")
-	r := runIn(t, root, "--json", "backlog", "show", "nobody-item", "--no-body")
+	writeItem(t, root, "cli", 1, "nobody-item", readyFields("Nobody item", "cli"), "Secret body.")
+	r := runIn(t, root, "--json", "backlog", "show", key(1), "--no-body")
 	wantExit(t, r, 0)
 	obj := jsonObj(t, r.stdout)
 	if body, ok := obj["body"].(string); ok && body != "" {
@@ -33,7 +33,8 @@ func TestShowNoBody(t *testing.T) {
 	}
 }
 
-// TestShowNotFound covers exit 4 for a missing id.
+// TestShowNotFound covers exit 4 for a missing id. The id is slug-shaped (a
+// former-id lookup that matches nothing); a malformed id is exit 2 instead.
 func TestShowNotFound(t *testing.T) {
 	root := mkTree(t)
 	r := runIn(t, root, "backlog", "show", "ghost-item")

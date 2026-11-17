@@ -20,16 +20,23 @@ func TestExitCodeTable(t *testing.T) {
 		wantExit(t, r, 2)
 	})
 
+	t.Run("code2_usage_malformed_id", func(t *testing.T) {
+		root := mkTree(t)
+		r := runIn(t, root, "backlog", "show", "../x") // not a key, a number, or a former id
+		wantExit(t, r, 2)
+		wantContains(t, r.stderr, `invalid item id "../x"`, "malformed id stderr")
+	})
+
 	t.Run("code3_validation_illegal_enum", func(t *testing.T) {
 		root := mkTree(t)
-		writeItem(t, root, "cli", "ec3-item", readyFields("Ec3 item", "cli"), "body")
-		r := runIn(t, root, "backlog", "set", "ec3-item", "status=not-a-status")
+		writeItem(t, root, "cli", 1, "ec3-item", readyFields("Ec3 item", "cli"), "body")
+		r := runIn(t, root, "backlog", "set", key(1), "status=not-a-status")
 		wantExit(t, r, 3)
 	})
 
 	t.Run("code4_not_found_show", func(t *testing.T) {
 		root := mkTree(t)
-		r := runIn(t, root, "backlog", "show", "does-not-exist")
+		r := runIn(t, root, "backlog", "show", "does-not-exist") // slug-shaped: a former id matching nothing
 		wantExit(t, r, 4)
 	})
 
@@ -38,15 +45,15 @@ func TestExitCodeTable(t *testing.T) {
 		f := readyFields("Ec5 item", "cli")
 		f["status"] = "in-progress"
 		f["claimed-at"] = "2026-07-20T10:00:00Z"
-		writeItem(t, root, "cli", "ec5-item", f, "body")
-		r := runIn(t, root, "backlog", "claim", "ec5-item")
+		writeItem(t, root, "cli", 1, "ec5-item", f, "body")
+		r := runIn(t, root, "backlog", "claim", key(1))
 		wantExit(t, r, 5)
 	})
 
 	t.Run("code6_precondition_close_unclaimed", func(t *testing.T) {
 		root := mkTree(t)
-		writeItem(t, root, "cli", "ec6-item", readyFields("Ec6 item", "cli"), "body")
-		r := runIn(t, root, "backlog", "close", "ec6-item", "--done") // not claimed
+		writeItem(t, root, "cli", 1, "ec6-item", readyFields("Ec6 item", "cli"), "body")
+		r := runIn(t, root, "backlog", "close", key(1), "--done") // not claimed
 		wantExit(t, r, 6)
 	})
 }

@@ -11,12 +11,12 @@ import (
 // archived items: exit 0, json ok=true.
 func TestValidateClean(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "good-item", readyFields("Good item", "cli"), "body")
-	writeItem(t, root, "intake", "good-idea", newFields("Good idea"), "body")
-	writeAtStatus(t, root, "good-done", "done")
-	writeAtStatus(t, root, "good-gone", "discarded")
-	for _, st := range []string{"in-progress", "validation", "blocked", "parked"} {
-		writeAtStatus(t, root, "good-"+st, st)
+	writeItem(t, root, "cli", 1, "good-item", readyFields("Good item", "cli"), "body")
+	writeItem(t, root, "intake", 2, "good-idea", newFields("Good idea"), "body")
+	writeAtStatus(t, root, 3, "good-done", "done")
+	writeAtStatus(t, root, 4, "good-gone", "discarded")
+	for i, st := range []string{"in-progress", "validation", "blocked", "parked"} {
+		writeAtStatus(t, root, 5+i, "good-"+st, st)
 	}
 
 	r := runIn(t, root, "--json", "backlog", "validate")
@@ -26,7 +26,9 @@ func TestValidateClean(t *testing.T) {
 	}
 }
 
-// violationCase seeds one rule violation into a fresh tree.
+// violationCase seeds one rule violation into a fresh tree. id is the
+// violation ID validate reports: the item key for item rules, the file name
+// for file rules.
 type violationCase struct {
 	rule string
 	id   string
@@ -34,51 +36,62 @@ type violationCase struct {
 }
 
 var violationCases = []violationCase{
-	{"frontmatter", "no-fm", func(t *testing.T, root string) {
-		writeRaw(t, itemPath(root, "intake", "no-fm"), "## Description\nno frontmatter\n")
+	{"frontmatter", key(1), func(t *testing.T, root string) {
+		writeRaw(t, itemPath(root, "intake", 1, "no-fm"), "## Description\nno frontmatter\n")
 	}},
-	{"unknown-key", "legacy-key", func(t *testing.T, root string) {
-		writeItem(t, root, "cli", "legacy-key", withField(readyFields("L", "cli"), "value-verdict", "ADVANCE"), "")
+	{"unknown-key", key(2), func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 2, "legacy-key", withField(readyFields("L", "cli"), "value-verdict", "ADVANCE"), "")
 	}},
-	{"location", "misplaced", func(t *testing.T, root string) {
-		writeItem(t, root, "cli", "misplaced", readyFields("M", "dev"), "")
+	{"location", key(3), func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 3, "misplaced", readyFields("M", "dev"), "")
 	}},
-	{"location", "wrong-dir-status", func(t *testing.T, root string) {
-		writeItem(t, root, "intake", "wrong-dir-status", withField(newFields("W"), "status", "in-progress"), "")
+	{"location", key(4), func(t *testing.T, root string) {
+		writeItem(t, root, "intake", 4, "wrong-dir-status", withField(newFields("W"), "status", "in-progress"), "")
 	}},
-	{"location", "undone", func(t *testing.T, root string) {
-		writeAtStatus(t, root, "undone", "done")
-		p := itemPath(root, "done", "undone")
+	{"location", key(5), func(t *testing.T, root string) {
+		writeAtStatus(t, root, 5, "undone", "done")
+		p := itemPath(root, "done", 5, "undone")
 		writeRaw(t, p, strings.Replace(readAll(t, p), "status: done", "status: validation", 1))
 	}},
-	{"enum", "bad-enum", func(t *testing.T, root string) {
-		writeItem(t, root, "cli", "bad-enum", withField(readyFields("B", "cli"), "risk", "totally-bogus"), "")
+	{"enum", key(6), func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 6, "bad-enum", withField(readyFields("B", "cli"), "risk", "totally-bogus"), "")
 	}},
-	{"enum", "old-status", func(t *testing.T, root string) {
-		writeItem(t, root, "intake", "old-status", withField(newFields("O"), "status", "idea"), "")
+	{"enum", key(7), func(t *testing.T, root string) {
+		writeItem(t, root, "intake", 7, "old-status", withField(newFields("O"), "status", "idea"), "")
 	}},
-	{"required", "no-summary", func(t *testing.T, root string) {
-		writeItem(t, root, "cli", "no-summary", withField(readyFields("N", "cli"), "summary", ""), "")
+	{"required", key(8), func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 8, "no-summary", withField(readyFields("N", "cli"), "summary", ""), "")
 	}},
-	{"required", "no-created", func(t *testing.T, root string) {
-		writeItem(t, root, "intake", "no-created", withField(newFields("N"), "created-at", ""), "")
+	{"required", key(9), func(t *testing.T, root string) {
+		writeItem(t, root, "intake", 9, "no-created", withField(newFields("N"), "created-at", ""), "")
 	}},
-	{"required", "no-delivered", func(t *testing.T, root string) {
-		writeItem(t, root, "cli", "no-delivered", withField(validationFields("N", "cli"), "delivered-at", ""), "")
+	{"required", key(10), func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 10, "no-delivered", withField(validationFields("N", "cli"), "delivered-at", ""), "")
 	}},
-	{"disposition-coherence", "auto-none", func(t *testing.T, root string) {
-		writeItem(t, root, "cli", "auto-none", withField(readyFields("A", "cli"), "verify", "none"), "")
+	{"disposition-coherence", key(11), func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 11, "auto-none", withField(readyFields("A", "cli"), "verify", "none"), "")
 	}},
-	{"hint-stripped", "hinted", func(t *testing.T, root string) {
-		writeItem(t, root, "cli", "hinted", withField(readyFields("H", "cli"), "hint", "dev"), "")
+	{"hint-stripped", key(12), func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 12, "hinted", withField(readyFields("H", "cli"), "hint", "dev"), "")
 	}},
-	{"id-unique", "dup-id", func(t *testing.T, root string) {
-		writeItem(t, root, "cli", "dup-id", readyFields("D1", "cli"), "")
-		writeItem(t, root, "dev", "dup-id", readyFields("D2", "dev"), "")
+	{"id-unique", key(13), func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 13, "dup-id", readyFields("D1", "cli"), "")
+		writeItem(t, root, "dev", 13, "dup-id", readyFields("D2", "dev"), "")
 	}},
 	{"stray-file", "notes.txt", func(t *testing.T, root string) {
 		writeRaw(t, filepath.Join(backlogDir(root), "cli", "notes.txt"), "x")
 	}},
+	{"filename-form", "loose-slug.md", func(t *testing.T, root string) {
+		writeItem(t, root, "cli", 14, "loose-slug", readyFields("Loose", "cli"), "")
+		mustRename(t, itemPath(root, "cli", 14, "loose-slug"), filepath.Join(backlogDir(root), "cli", "loose-slug.md"))
+	}},
+}
+
+func mustRename(t *testing.T, from, to string) {
+	t.Helper()
+	if err := os.Rename(from, to); err != nil {
+		t.Fatalf("rename %s -> %s: %v", from, to, err)
+	}
 }
 
 // TestValidateListsEveryViolation seeds one violation per rule into one tree
@@ -88,7 +101,7 @@ var violationCases = []violationCase{
 func TestValidateListsEveryViolation(t *testing.T) {
 	root := scaffoldFresh(t)
 	writeRaw(t, filepath.Join(backlogDir(root), "workstreams.md"),
-		"---\nschema: 2\nsweep-order: bugs, cli, dev, process\n---\n")
+		"---\nschema: 3\nkey-prefix: "+testPrefix+"\nsweep-order: bugs, cli, dev, process\n---\n")
 	for _, d := range []string{"cli", "dev", "process", "bugs"} {
 		if err := os.MkdirAll(filepath.Join(backlogDir(root), d), 0o755); err != nil {
 			t.Fatal(err)
@@ -140,49 +153,104 @@ func TestValidateListsEveryViolation(t *testing.T) {
 	}
 }
 
+// TestValidateDuplicateNumberAcrossDirs covers id-unique keyed on the number:
+// the same number in a workstream dir and in done/ is one violation whose ID
+// is the key (exit 3).
+func TestValidateDuplicateNumberAcrossDirs(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", 3, "dup-live", readyFields("Dup live", "cli"), "")
+	if err := os.MkdirAll(filepath.Join(backlogDir(root), "done"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	done := withField(validationFields("Dup done", "cli"), "status", "done")
+	done["closed-at"] = "2026-11-05T00:00:00Z"
+	writeItem(t, root, "done", 3, "dup-done", done, "")
+
+	r := runIn(t, root, "backlog", "validate")
+	wantExit(t, r, 3)
+	wantContains(t, r.stdout, key(3)+": id-unique", "validate stdout")
+}
+
+// TestValidateFilenameForm covers filename-form: a well-formed item whose file
+// name is not NNNN-<slug>.md is reported under its file name.
+func TestValidateFilenameForm(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", 1, "loose-slug", readyFields("Loose slug", "cli"), "body")
+	mustRename(t, itemPath(root, "cli", 1, "loose-slug"), filepath.Join(backlogDir(root), "cli", "loose-slug.md"))
+
+	r := runIn(t, root, "backlog", "validate")
+	wantExit(t, r, 3)
+	wantContains(t, r.stdout, "loose-slug.md: filename-form", "validate stdout")
+}
+
+// TestValidateKeyPrefixMissing covers key-prefix-missing: a schema-3 tree
+// holding items whose workstreams.md has no key-prefix line is reported under
+// workstreams.md.
+func TestValidateKeyPrefixMissing(t *testing.T) {
+	root := mkTree(t)
+	writeRaw(t, filepath.Join(backlogDir(root), "workstreams.md"),
+		"---\nschema: 3\nsweep-order: bugs, cli, dev, process\n---\n")
+	writeItem(t, root, "cli", 1, "no-prefix", readyFields("No prefix", "cli"), "body")
+
+	r := runIn(t, root, "backlog", "validate")
+	wantExit(t, r, 3)
+	wantContains(t, r.stdout, "workstreams.md: key-prefix-missing", "validate stdout")
+}
+
 // TestValidateStrictPromotesWarnings covers --strict: an out-of-vocabulary
 // change-type warns by default and fails under --strict.
 func TestValidateStrictPromotesWarnings(t *testing.T) {
 	root := mkTree(t)
 	writeRaw(t, filepath.Join(backlogDir(root), "workstreams.md"),
-		"---\nschema: 2\nsweep-order: bugs, cli, dev, process\nchange-types: doc\n---\n")
-	writeItem(t, root, "cli", "odd", readyFields("Odd", "cli"), "")
+		"---\nschema: 3\nkey-prefix: "+testPrefix+"\nsweep-order: bugs, cli, dev, process\nchange-types: doc\n---\n")
+	writeItem(t, root, "cli", 1, "odd", readyFields("Odd", "cli"), "")
 	r := runIn(t, root, "backlog", "validate")
 	wantExit(t, r, 0)
-	wantContains(t, r.stdout, "warn: odd: change-type-vocab: ", "validate warning")
+	wantContains(t, r.stdout, "warn: "+key(1)+": change-type-vocab: ", "validate warning")
 	wantExit(t, runIn(t, root, "backlog", "validate", "--strict"), 3)
 }
 
 // TestValidateRequiresSchemaStamp covers the migration gate: a tree with items
-// but no `schema: 2` stamp is refused (exit 6) with a pointer to migrate, and
-// doctor fails backlog-valid with the same pointer.
+// but no `schema: 3` stamp (unstamped, or stamped 2) is refused (exit 6) with
+// a pointer to migrate, and doctor fails backlog-valid with the same pointer.
 func TestValidateRequiresSchemaStamp(t *testing.T) {
-	root := mkTree(t)
-	writeRaw(t, filepath.Join(backlogDir(root), "workstreams.md"),
-		"---\nsweep-order: bugs, cli, dev, process\n---\n")
-	writeItem(t, root, "intake", "old", withField(newFields("Old"), "status", "idea"), "")
-	r := runIn(t, root, "backlog", "validate")
-	wantExit(t, r, 6)
-	wantContains(t, r.stderr, "anthill backlog migrate", "validate stderr")
-	wantExit(t, runIn(t, root, "validate"), 6)
-	r = runIn(t, root, "doctor")
-	wantExit(t, r, 3)
-	wantContains(t, r.stdout, "anthill backlog migrate", "doctor stdout")
+	for name, fm := range map[string]string{
+		"unstamped": "---\nsweep-order: bugs, cli, dev, process\n---\n",
+		"schema-2":  "---\nschema: 2\nsweep-order: bugs, cli, dev, process\n---\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			root := mkTree(t)
+			writeRaw(t, filepath.Join(backlogDir(root), "workstreams.md"), fm)
+			writeItem(t, root, "intake", 1, "old", withField(newFields("Old"), "status", "idea"), "")
+			r := runIn(t, root, "backlog", "validate")
+			wantExit(t, r, 6)
+			wantContains(t, r.stderr, "not on schema 3", "validate stderr")
+			wantContains(t, r.stderr, "anthill backlog migrate", "validate stderr")
+			wantExit(t, runIn(t, root, "validate"), 6)
+			r = runIn(t, root, "doctor")
+			wantExit(t, r, 3)
+			wantContains(t, r.stdout, "anthill backlog migrate", "doctor stdout")
+		})
+	}
 }
 
 // TestValidateTopLevelAlias covers `anthill validate` on a clean tree.
 func TestValidateTopLevelAlias(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "alias-good", readyFields("Alias good", "cli"), "body")
+	writeItem(t, root, "cli", 1, "alias-good", readyFields("Alias good", "cli"), "body")
 	wantExit(t, runIn(t, root, "validate"), 0)
 }
 
 // TestNewOnFreshTreeStampsSchema covers the empty-tree rule: a scaffold has no
-// items and no stamp; the first `new` stamps `schema: 2` so validate applies.
+// items and no current stamp; the first `new` stamps `schema: 3` and a
+// key-prefix so validate applies.
 func TestNewOnFreshTreeStampsSchema(t *testing.T) {
 	root := scaffoldFresh(t)
 	wantExit(t, runIn(t, root, "backlog", "validate"), 0)
 	wantExit(t, runIn(t, root, "backlog", "new", "--title", "First", "--value", "v"), 0)
-	wantContains(t, readAll(t, filepath.Join(backlogDir(root), "workstreams.md")), "schema: 2", "workstreams.md")
+	fm := readFrontmatter(t, filepath.Join(backlogDir(root), "workstreams.md"))
+	if fm["schema"] != "3" || fm["key-prefix"] == "" {
+		t.Fatalf("first new did not stamp schema 3 + key-prefix: %v", fm)
+	}
 	wantExit(t, runIn(t, root, "backlog", "validate"), 0)
 }

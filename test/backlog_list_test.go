@@ -2,15 +2,15 @@ package e2e_test
 
 import "testing"
 
-// seedMixed seeds a tree with one untriaged idea, one approved (ready) cli
-// item, and one non-ready (idea) cli item.
+// seedMixed seeds a tree with one untriaged idea (ANT-1), one approved (ready)
+// cli item (ANT-2), and one non-ready (proposed) cli item (ANT-3).
 func seedMixed(t *testing.T) string {
 	root := mkTree(t)
-	writeItem(t, root, "intake", "an-idea", newFields("An idea"), "body")
-	writeItem(t, root, "cli", "ready-one", readyFields("Ready one", "cli"), "body")
+	writeItem(t, root, "intake", 1, "an-idea", newFields("An idea"), "body")
+	writeItem(t, root, "cli", 2, "ready-one", readyFields("Ready one", "cli"), "body")
 	notReady := readyFields("Not ready", "cli")
 	notReady["dispatch"] = "proposed"
-	writeItem(t, root, "cli", "not-ready", notReady, "body")
+	writeItem(t, root, "cli", 3, "not-ready", notReady, "body")
 	return root
 }
 
@@ -30,16 +30,16 @@ func TestListJSONArray(t *testing.T) {
 		id, _ := it["id"].(string)
 		byID[id] = it
 	}
-	for _, id := range []string{"an-idea", "ready-one", "not-ready"} {
+	for _, id := range []string{key(1), key(2), key(3)} {
 		if _, ok := byID[id]; !ok {
 			t.Fatalf("list missing item %q: %s", id, r.stdout)
 		}
 	}
-	if byID["ready-one"]["ready"] != true {
-		t.Fatalf("ready-one should have ready=true, got %v", byID["ready-one"]["ready"])
+	if byID[key(2)]["ready"] != true {
+		t.Fatalf("%s (ready-one) should have ready=true, got %v", key(2), byID[key(2)]["ready"])
 	}
-	if byID["an-idea"]["ready"] != false {
-		t.Fatalf("an-idea should have ready=false, got %v", byID["an-idea"]["ready"])
+	if byID[key(1)]["ready"] != false {
+		t.Fatalf("%s (an-idea) should have ready=false, got %v", key(1), byID[key(1)]["ready"])
 	}
 }
 
@@ -49,8 +49,8 @@ func TestListReadyFilter(t *testing.T) {
 	r := runIn(t, root, "--json", "backlog", "list", "--ready")
 	wantExit(t, r, 0)
 	arr := jsonArr(t, r.stdout)
-	if len(arr) != 1 || arr[0]["id"] != "ready-one" {
-		t.Fatalf("--ready should return only ready-one, got: %s", r.stdout)
+	if len(arr) != 1 || arr[0]["id"] != key(2) {
+		t.Fatalf("--ready should return only %s (ready-one), got: %s", key(2), r.stdout)
 	}
 }
 
@@ -60,8 +60,8 @@ func TestListUntriagedFilter(t *testing.T) {
 	r := runIn(t, root, "--json", "backlog", "list", "--untriaged")
 	wantExit(t, r, 0)
 	arr := jsonArr(t, r.stdout)
-	if len(arr) != 1 || arr[0]["id"] != "an-idea" {
-		t.Fatalf("--untriaged should return only an-idea, got: %s", r.stdout)
+	if len(arr) != 1 || arr[0]["id"] != key(1) {
+		t.Fatalf("--untriaged should return only %s (an-idea), got: %s", key(1), r.stdout)
 	}
 }
 
@@ -71,8 +71,8 @@ func TestListStatusFilter(t *testing.T) {
 	r := runIn(t, root, "--json", "backlog", "list", "--status", "new")
 	wantExit(t, r, 0)
 	arr := jsonArr(t, r.stdout)
-	if len(arr) != 1 || arr[0]["id"] != "an-idea" {
-		t.Fatalf("--status new should return only an-idea, got: %s", r.stdout)
+	if len(arr) != 1 || arr[0]["id"] != key(1) {
+		t.Fatalf("--status new should return only %s (an-idea), got: %s", key(1), r.stdout)
 	}
 }
 
@@ -84,6 +84,20 @@ func TestListWorkstreamFilter(t *testing.T) {
 	arr := jsonArr(t, r.stdout)
 	if len(arr) != 2 {
 		t.Fatalf("--workstream cli should return 2 items, got %d: %s", len(arr), r.stdout)
+	}
+}
+
+// TestListSortIDNumeric covers --sort id comparing keys by number, not as
+// strings: ANT-2 lists before ANT-10.
+func TestListSortIDNumeric(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", 10, "ten", readyFields("Ten", "cli"), "body")
+	writeItem(t, root, "cli", 2, "two", readyFields("Two", "cli"), "body")
+	r := runIn(t, root, "--json", "backlog", "list", "--sort", "id")
+	wantExit(t, r, 0)
+	arr := jsonArr(t, r.stdout)
+	if len(arr) != 2 || arr[0]["id"] != key(2) || arr[1]["id"] != key(10) {
+		t.Fatalf("--sort id should order %s before %s, got: %s", key(2), key(10), r.stdout)
 	}
 }
 

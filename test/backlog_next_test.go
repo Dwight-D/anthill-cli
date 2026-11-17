@@ -9,17 +9,17 @@ import (
 // claiming it. The item stays triaged (not in-progress).
 func TestNextPicksReady(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "pick-me", readyFields("Pick me", "cli"), "body")
+	writeItem(t, root, "cli", 1, "pick-me", readyFields("Pick me", "cli"), "body")
 
 	r := runIn(t, root, "--json", "backlog", "next")
 	wantExit(t, r, 0)
 	obj := jsonObj(t, r.stdout)
-	if obj["id"] != "pick-me" {
-		t.Fatalf("next id = %v, want pick-me", obj["id"])
+	if obj["id"] != key(1) {
+		t.Fatalf("next id = %v, want %s", obj["id"], key(1))
 	}
 
 	// next must not claim: status remains approved.
-	fm := readFrontmatter(t, itemPath(root, "cli", "pick-me"))
+	fm := readFrontmatter(t, itemPath(root, "cli", 1, "pick-me"))
 	if fm["status"] != "triaged" {
 		t.Fatalf("next must not mutate status, got %q", fm["status"])
 	}
