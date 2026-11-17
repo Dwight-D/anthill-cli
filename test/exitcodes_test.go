@@ -22,7 +22,7 @@ func TestExitCodeTable(t *testing.T) {
 
 	t.Run("code3_validation_illegal_enum", func(t *testing.T) {
 		root := mkTree(t)
-		writeItem(t, root, "cli", "ec3-item", approvedFields("Ec3 item", "cli"), "body")
+		writeItem(t, root, "cli", "ec3-item", readyFields("Ec3 item", "cli"), "body")
 		r := runIn(t, root, "backlog", "set", "ec3-item", "status=not-a-status")
 		wantExit(t, r, 3)
 	})
@@ -35,7 +35,7 @@ func TestExitCodeTable(t *testing.T) {
 
 	t.Run("code5_conflict_double_claim", func(t *testing.T) {
 		root := mkTree(t)
-		f := approvedFields("Ec5 item", "cli")
+		f := readyFields("Ec5 item", "cli")
 		f["status"] = "in-progress"
 		f["claimed-at"] = "2026-07-20T10:00:00Z"
 		writeItem(t, root, "cli", "ec5-item", f, "body")
@@ -45,7 +45,7 @@ func TestExitCodeTable(t *testing.T) {
 
 	t.Run("code6_precondition_close_unclaimed", func(t *testing.T) {
 		root := mkTree(t)
-		writeItem(t, root, "cli", "ec6-item", approvedFields("Ec6 item", "cli"), "body")
+		writeItem(t, root, "cli", "ec6-item", readyFields("Ec6 item", "cli"), "body")
 		r := runIn(t, root, "backlog", "close", "ec6-item", "--done") // not claimed
 		wantExit(t, r, 6)
 	})

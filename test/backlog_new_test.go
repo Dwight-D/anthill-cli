@@ -5,8 +5,9 @@ import (
 	"testing"
 )
 
-// TestNewPlain covers `backlog new` (spec §3.1): creates intake/<id>.md with
-// status idea and no workstream; prints the id on stdout, "created" on stderr.
+// TestNewPlain covers `backlog new` (§6.1): creates intake/<id>.md with status
+// new, dispatch proposed, created-at, reporter, the body skeleton, and no
+// workstream; prints the id on stdout, "created" on stderr.
 func TestNewPlain(t *testing.T) {
 	root := mkTree(t)
 	r := runIn(t, root, "backlog", "new", "--title", "Fix the thing", "--value", "removes pain")
@@ -21,8 +22,13 @@ func TestNewPlain(t *testing.T) {
 	path := itemPath(root, "intake", "fix-the-thing")
 	wantFilePresent(t, path)
 	fm := readFrontmatter(t, path)
-	if fm["status"] != "idea" {
-		t.Fatalf("status = %q, want idea", fm["status"])
+	if fm["status"] != "new" || fm["dispatch"] != "proposed" || fm["priority"] != "normal" ||
+		fm["reporter"] != "user" || fm["created-at"] == "" {
+		t.Fatalf("new item frontmatter = %v", fm)
+	}
+	body := readAll(t, path)
+	for _, h := range []string{"## Description", "## Acceptance", "## Triage", "## Evidence", "## Log"} {
+		wantContains(t, body, h, "new item body skeleton")
 	}
 	if _, ok := fm["workstream"]; ok {
 		t.Fatalf("intake item must not carry a workstream key, got %q", fm["workstream"])
@@ -42,8 +48,8 @@ func TestNewJSON(t *testing.T) {
 	if obj["id"] != "add-a-widget" {
 		t.Fatalf("json id = %v, want add-a-widget", obj["id"])
 	}
-	if obj["status"] != "idea" {
-		t.Fatalf("json status = %v, want idea", obj["status"])
+	if obj["status"] != "new" || obj["dispatch"] != "proposed" {
+		t.Fatalf("json status/dispatch = %v/%v, want new/proposed", obj["status"], obj["dispatch"])
 	}
 	if obj["title"] != "Add a widget" {
 		t.Fatalf("json title = %v, want %q", obj["title"], "Add a widget")

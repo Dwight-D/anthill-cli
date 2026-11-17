@@ -6,7 +6,7 @@ import "testing"
 // a body string field (spec §3.3).
 func TestShowJSON(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "show-item", approvedFields("Show item", "cli"), "The full body text.")
+	writeItem(t, root, "cli", "show-item", readyFields("Show item", "cli"), "The full body text.")
 	r := runIn(t, root, "--json", "backlog", "show", "show-item")
 	wantExit(t, r, 0)
 
@@ -24,7 +24,7 @@ func TestShowJSON(t *testing.T) {
 // TestShowNoBody covers --no-body suppressing the markdown body.
 func TestShowNoBody(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "nobody-item", approvedFields("Nobody item", "cli"), "Secret body.")
+	writeItem(t, root, "cli", "nobody-item", readyFields("Nobody item", "cli"), "Secret body.")
 	r := runIn(t, root, "--json", "backlog", "show", "nobody-item", "--no-body")
 	wantExit(t, r, 0)
 	obj := jsonObj(t, r.stdout)

@@ -219,7 +219,7 @@ func (a *App) sectionBChecks(root string) []checkResult {
 		}
 	}
 
-	res, err := store.Validate(true)
+	res, err := store.Validate(false)
 	if err != nil {
 		checks = append(checks, checkResult{"B", "backlog-valid", false, err.Error(), sevHard})
 	} else {
@@ -369,7 +369,7 @@ func (a *App) newValidateCommand() *cobra.Command {
 					a.note("ok: %d backlog items, escalations well-formed", res.Checked)
 				} else {
 					for _, v := range res.Violations {
-						a.note("%s [%s]: %s", v.ID, v.Check, v.Message)
+						a.note("%s [%s]: %s", v.ID, v.Rule, v.Message)
 					}
 					for _, p := range problems {
 						a.note("escalation %s", p)
@@ -377,7 +377,7 @@ func (a *App) newValidateCommand() *cobra.Command {
 				}
 				// Warnings are advisory — printed regardless of ok, never affect exit.
 				for _, w := range res.Warnings {
-					a.note("warn: %s [%s]: %s", w.ID, w.Check, w.Message)
+					a.note("warn: %s [%s]: %s", w.ID, w.Rule, w.Message)
 				}
 			}
 			if !ok {

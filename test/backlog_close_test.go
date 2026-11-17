@@ -5,243 +5,201 @@ import (
 	"testing"
 )
 
-// claimedFields is an in-progress (claimed) item, ready to be closed.
-func claimedFields(title, ws string) map[string]string {
-	f := approvedFields(title, ws)
-	f["status"] = "in-progress"
-	f["claimed-at"] = "2026-07-20T10:00:00Z"
-	return f
-}
-
-// TestCloseDoneTerminal covers `close --done` (spec §3.7): terminal — the item
-// file is DELETED and one line is appended to CHANGELOG.md.
-func TestCloseDoneTerminal(t *testing.T) {
+// TestCloseDoneArchives covers `close --done` (§2): validation → done; the
+// file moves to done/, closed-at is stamped, and one CHANGELOG line is filed.
+func TestCloseDoneArchives(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "done-item", claimedFields("Done item", "cli"), "body")
+	writeItem(t, root, "cli", "done-item", validationFields("Done item", "cli"), "body")
 
 	r := runIn(t, root, "backlog", "close", "done-item", "--done")
 	wantExit(t, r, 0)
 
 	wantFileGone(t, itemPath(root, "cli", "done-item"))
+	fm := readFrontmatter(t, itemPath(root, "done", "done-item"))
+	if fm["status"] != "done" || fm["closed-at"] == "" || fm["workstream"] != "cli" {
+		t.Fatalf("done item frontmatter = %v", fm)
+	}
 	changelog := readAll(t, changelogPath(root))
-	wantContains(t, changelog, "done-item", "CHANGELOG after --done")
-	wantContains(t, changelog, "done", "CHANGELOG after --done")
+	wantContains(t, changelog, "done-item — done", "CHANGELOG after --done")
+	wantContains(t, readAll(t, itemPath(root, "done", "done-item")), "close --done", "Log after --done")
 }
 
-// TestCloseDiscardTerminal covers `close --discard` (terminal + CHANGELOG).
-func TestCloseDiscardTerminal(t *testing.T) {
+// TestCloseDoneFromInProgressRefused covers exit 6: done needs validation.
+func TestCloseDoneFromInProgressRefused(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "discard-item", claimedFields("Discard item", "cli"), "body")
-
-	r := runIn(t, root, "backlog", "close", "discard-item", "--discard", "not worth doing")
-	wantExit(t, r, 0)
-
-	wantFileGone(t, itemPath(root, "cli", "discard-item"))
-	changelog := readAll(t, changelogPath(root))
-	wantContains(t, changelog, "discard-item", "CHANGELOG after --discard")
-	wantContains(t, changelog, "discarded", "CHANGELOG after --discard")
+	writeItem(t, root, "cli", "wip", claimedFields("Wip", "cli"), "body")
+	r := runIn(t, root, "backlog", "close", "wip", "--done")
+	wantExit(t, r, 6)
+	wantFilePresent(t, itemPath(root, "cli", "wip"))
 }
 
-// TestCloseRemoveTerminal covers `close --remove` (terminal + CHANGELOG).
-func TestCloseRemoveTerminal(t *testing.T) {
+// TestCloseDoneForce covers --force: a human closes an in-progress item.
+func TestCloseDoneForce(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "forced", claimedFields("Forced", "cli"), "body")
+	r := runIn(t, root, "backlog", "close", "forced", "--done", "--force")
+	wantExit(t, r, 0)
+	wantContains(t, readAll(t, itemPath(root, "done", "forced")), "close --done (forced)", "forced Log line")
+}
+
+// TestCloseRejectReturnsToInProgress covers validation → in-progress keeping
+// the claim, with the reason in the Log and no CHANGELOG line.
+func TestCloseRejectReturnsToInProgress(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "rej", validationFields("Rej", "cli"), "body")
+	before := readAll(t, changelogPath(root))
+	r := runIn(t, root, "backlog", "close", "rej", "--reject", "tests not run")
+	wantExit(t, r, 0)
+	fm := readFrontmatter(t, itemPath(root, "cli", "rej"))
+	if fm["status"] != "in-progress" || fm["claimed-by"] != "worker-a" {
+		t.Fatalf("after reject: %v", fm)
+	}
+	wantContains(t, readAll(t, itemPath(root, "cli", "rej")), "close --reject by", "Log after reject")
+	wantContains(t, readAll(t, itemPath(root, "cli", "rej")), "tests not run", "Log reason")
+	if readAll(t, changelogPath(root)) != before {
+		t.Fatal("reject must not write CHANGELOG")
+	}
+}
+
+// TestCloseRejectNeedsReason covers exit 2 for a reasonless reject.
+func TestCloseRejectNeedsReason(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "rej", validationFields("Rej", "cli"), "body")
+	wantExit(t, runIn(t, root, "backlog", "close", "rej", "--reject"), 2)
+}
+
+// TestCloseRejectFromInProgressRefused covers exit 6: reject needs validation.
+func TestCloseRejectFromInProgressRefused(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "wip", claimedFields("Wip", "cli"), "body")
+	wantExit(t, runIn(t, root, "backlog", "close", "wip", "--reject", "no"), 6)
+}
+
+// TestCloseDiscardArchives covers any → discarded: moved to discarded/.
+func TestCloseDiscardArchives(t *testing.T) {
+	for _, tc := range []struct {
+		dir    string
+		fields map[string]string
+	}{
+		{"intake", newFields("Disc")},
+		{"cli", readyFields("Disc", "cli")},
+		{"cli", claimedFields("Disc", "cli")},
+		{"cli", withField(readyFields("Disc", "cli"), "status", "parked")},
+	} {
+		root := mkTree(t)
+		writeItem(t, root, tc.dir, "disc", tc.fields, "body")
+		r := runIn(t, root, "backlog", "close", "disc", "--discard", "not worth doing")
+		wantExit(t, r, 0)
+		wantFileGone(t, itemPath(root, tc.dir, "disc"))
+		fm := readFrontmatter(t, itemPath(root, "discarded", "disc"))
+		if fm["status"] != "discarded" || fm["closed-at"] == "" {
+			t.Fatalf("discarded item from %s: %v", tc.fields["status"], fm)
+		}
+		wantContains(t, readAll(t, changelogPath(root)), "disc — discarded: not worth doing", "CHANGELOG")
+	}
+}
+
+// TestCloseDiscardTwiceRefused covers exit 6: an archived item cannot be
+// discarded again.
+func TestCloseDiscardTwiceRefused(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "intake", "d", newFields("D"), "body")
+	wantExit(t, runIn(t, root, "backlog", "close", "d", "--discard"), 0)
+	wantExit(t, runIn(t, root, "backlog", "close", "d", "--discard"), 6)
+}
+
+// TestCloseRemoveDeletes covers any → removed: the file is deleted outright.
+func TestCloseRemoveDeletes(t *testing.T) {
 	root := mkTree(t)
 	writeItem(t, root, "cli", "remove-item", claimedFields("Remove item", "cli"), "body")
-
-	r := runIn(t, root, "backlog", "close", "remove-item", "--remove", "superseded")
+	r := runIn(t, root, "backlog", "close", "remove-item", "--remove", "filed in error")
 	wantExit(t, r, 0)
-
 	wantFileGone(t, itemPath(root, "cli", "remove-item"))
-	changelog := readAll(t, changelogPath(root))
-	wantContains(t, changelog, "remove-item", "CHANGELOG after --remove")
-	wantContains(t, changelog, "removed", "CHANGELOG after --remove")
+	wantFileGone(t, itemPath(root, "discarded", "remove-item"))
+	wantContains(t, readAll(t, changelogPath(root)), "remove-item — removed: filed in error", "CHANGELOG")
 }
 
 // sectionedChangelog is the CHANGELOG shape a real (scaffolded) install ships:
-// an empty "## Done" above "## Discarded". It is the shape under which the
-// mis-filing bug manifests.
+// an empty "## Done" above "## Discarded".
 const sectionedChangelog = "# Improvement Changelog\n\nOne line per closed item, newest first.\n\n## Done\n\n## Discarded (triaged out, not done)\n"
 
-// TestCloseDoneFilesUnderDoneHeading is the regression for the bug where
-// `close --done` appended the changelog line at the end of the file — landing it
-// under the trailing "## Discarded" heading instead of the empty "## Done". The
-// done line must fall between "## Done" and "## Discarded".
+// TestCloseDoneFilesUnderDoneHeading: the done line falls between "## Done"
+// and "## Discarded".
 func TestCloseDoneFilesUnderDoneHeading(t *testing.T) {
 	root := mkTree(t)
 	writeRaw(t, changelogPath(root), sectionedChangelog)
-	writeItem(t, root, "cli", "done-item", claimedFields("Done item", "cli"), "body")
-
-	r := runIn(t, root, "backlog", "close", "done-item", "--done")
-	wantExit(t, r, 0)
-
+	writeItem(t, root, "cli", "done-item", validationFields("Done item", "cli"), "body")
+	wantExit(t, runIn(t, root, "backlog", "close", "done-item", "--done"), 0)
 	cl := readAll(t, changelogPath(root))
 	doneIdx := strings.Index(cl, "## Done")
 	discIdx := strings.Index(cl, "## Discarded")
 	lineIdx := strings.Index(cl, "done-item")
-	if lineIdx < 0 {
-		t.Fatalf("changelog missing the closed item:\n%s", cl)
-	}
-	if !(lineIdx > doneIdx && lineIdx < discIdx) {
-		t.Fatalf("close --done filed the item under the wrong heading:\n%s", cl)
+	if lineIdx < 0 || !(lineIdx > doneIdx && lineIdx < discIdx) {
+		t.Fatalf("close --done filed under the wrong heading:\n%s", cl)
 	}
 }
 
-// TestCloseDiscardFilesUnderDiscardedHeading is the companion: a discarded item
-// must land under "## Discarded", not "## Done".
+// TestCloseDiscardFilesUnderDiscardedHeading: a discarded item lands under
+// "## Discarded".
 func TestCloseDiscardFilesUnderDiscardedHeading(t *testing.T) {
 	root := mkTree(t)
 	writeRaw(t, changelogPath(root), sectionedChangelog)
 	writeItem(t, root, "cli", "discard-item", claimedFields("Discard item", "cli"), "body")
-
-	r := runIn(t, root, "backlog", "close", "discard-item", "--discard", "not worth doing")
-	wantExit(t, r, 0)
-
+	wantExit(t, runIn(t, root, "backlog", "close", "discard-item", "--discard", "not worth doing"), 0)
 	cl := readAll(t, changelogPath(root))
-	discIdx := strings.Index(cl, "## Discarded")
-	lineIdx := strings.Index(cl, "discard-item")
-	if lineIdx < 0 || lineIdx < discIdx {
+	if i := strings.Index(cl, "discard-item"); i < 0 || i < strings.Index(cl, "## Discarded") {
 		t.Fatalf("close --discard did not file under ## Discarded:\n%s", cl)
 	}
 }
 
-// TestCloseBlockNonTerminal covers `close --block` (spec §3.7, §7 Q3): the file
-// STAYS, status becomes blocked, the reason lands in note, and NO CHANGELOG
-// line is written.
-func TestCloseBlockNonTerminal(t *testing.T) {
+// TestCloseJSON covers the json result: id, mode, status, changelog.
+func TestCloseJSON(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "block-item", claimedFields("Block item", "cli"), "body")
-
-	before := readAll(t, changelogPath(root))
-	r := runIn(t, root, "backlog", "close", "block-item", "--block", "waiting on escalation")
-	wantExit(t, r, 0)
-
-	// File remains, status blocked.
-	path := itemPath(root, "cli", "block-item")
-	wantFilePresent(t, path)
-	fm := readFrontmatter(t, path)
-	if fm["status"] != "blocked" {
-		t.Fatalf("status = %q, want blocked", fm["status"])
-	}
-	if !strings.Contains(fm["note"], "waiting on escalation") {
-		t.Fatalf("block reason should land in note, got note=%q", fm["note"])
-	}
-
-	// No CHANGELOG line appended.
-	after := readAll(t, changelogPath(root))
-	if after != before {
-		t.Fatalf("close --block must NOT append to CHANGELOG.\nbefore: %q\nafter: %q", before, after)
-	}
-}
-
-// TestCloseBlockJSON covers the json result for block: changelog=false.
-func TestCloseBlockJSON(t *testing.T) {
-	root := mkTree(t)
-	writeItem(t, root, "cli", "block-json", claimedFields("Block json", "cli"), "body")
-	r := runIn(t, root, "--json", "backlog", "close", "block-json", "--block", "dep")
-	wantExit(t, r, 0)
-	obj := jsonObj(t, r.stdout)
-	if obj["disposition"] != "block" {
-		t.Fatalf("json disposition = %v, want block", obj["disposition"])
-	}
-	if obj["changelog"] != false {
-		t.Fatalf("json changelog = %v, want false for block", obj["changelog"])
-	}
-}
-
-// TestCloseDoneJSON covers the json result for done: changelog=true.
-func TestCloseDoneJSON(t *testing.T) {
-	root := mkTree(t)
-	writeItem(t, root, "cli", "done-json", claimedFields("Done json", "cli"), "body")
+	writeItem(t, root, "cli", "done-json", validationFields("Done json", "cli"), "body")
 	r := runIn(t, root, "--json", "backlog", "close", "done-json", "--done")
 	wantExit(t, r, 0)
 	obj := jsonObj(t, r.stdout)
-	if obj["disposition"] != "done" {
-		t.Fatalf("json disposition = %v, want done", obj["disposition"])
+	if obj["mode"] != "done" || obj["status"] != "done" || obj["changelog"] != true {
+		t.Fatalf("json = %v", obj)
 	}
-	if obj["changelog"] != true {
-		t.Fatalf("json changelog = %v, want true for done", obj["changelog"])
+	writeItem(t, root, "cli", "rej-json", validationFields("Rej json", "cli"), "body")
+	r = runIn(t, root, "--json", "backlog", "close", "rej-json", "--reject", "x")
+	wantExit(t, r, 0)
+	if obj := jsonObj(t, r.stdout); obj["changelog"] != false || obj["status"] != "in-progress" {
+		t.Fatalf("reject json = %v", obj)
 	}
 }
 
-// TestCloseBareDispositionAfterID is the regression for the flag-parsing bug
-// (backlog item "Fix backlog close"): the disposition flags were string flags,
-// so a bare `close <id> --remove` died with "flag needs an argument". The
-// dispositions are pure booleans; a bare flag after the id must work, with the
-// CHANGELOG line falling back to the item title.
-func TestCloseBareDispositionAfterID(t *testing.T) {
+// TestCloseBareModeAfterID: a bare boolean mode after the id works, and the
+// CHANGELOG line falls back to the title.
+func TestCloseBareModeAfterID(t *testing.T) {
 	root := mkTree(t)
 	writeItem(t, root, "cli", "bare-item", claimedFields("Bare item", "cli"), "body")
-
-	r := runIn(t, root, "backlog", "close", "bare-item", "--remove")
-	wantExit(t, r, 0)
-
-	wantFileGone(t, itemPath(root, "cli", "bare-item"))
-	changelog := readAll(t, changelogPath(root))
-	wantContains(t, changelog, "removed", "CHANGELOG after bare --remove")
-	wantContains(t, changelog, "Bare item", "CHANGELOG reason falls back to title")
+	wantExit(t, runIn(t, root, "backlog", "close", "bare-item", "--remove"), 0)
+	wantContains(t, readAll(t, changelogPath(root)), "Bare item", "CHANGELOG reason falls back to title")
 }
 
-// TestCloseDispositionBeforeID is the companion regression: with string flags,
-// `close --remove <id>` swallowed the id as the flag's value and the command
-// failed for want of a positional. The id must parse as the positional in
-// either flag order.
-func TestCloseDispositionBeforeID(t *testing.T) {
+// TestCloseModeBeforeID: the id parses as the positional in either order.
+func TestCloseModeBeforeID(t *testing.T) {
 	root := mkTree(t)
 	writeItem(t, root, "cli", "order-item", claimedFields("Order item", "cli"), "body")
-
-	r := runIn(t, root, "backlog", "close", "--remove", "order-item")
-	wantExit(t, r, 0)
-
-	wantFileGone(t, itemPath(root, "cli", "order-item"))
-	changelog := readAll(t, changelogPath(root))
-	wantContains(t, changelog, "order-item", "CHANGELOG after --remove <id>")
+	wantExit(t, runIn(t, root, "backlog", "close", "--discard", "order-item", "duplicate of other-item"), 0)
+	wantContains(t, readAll(t, changelogPath(root)), "duplicate of other-item", "CHANGELOG reason")
 }
 
-// TestCloseFlagFirstWithReason covers flag-first order with an explicit reason:
-// `close --discard <id> "reason"` — the id is the first positional, the reason
-// the second, regardless of where the boolean flag sits.
-func TestCloseFlagFirstWithReason(t *testing.T) {
+// TestCloseUsageErrors covers exit 2: no mode, several modes, --force off done,
+// and the removed --block.
+func TestCloseUsageErrors(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "why-item", claimedFields("Why item", "cli"), "body")
-
-	r := runIn(t, root, "backlog", "close", "--discard", "why-item", "duplicate of other-item")
-	wantExit(t, r, 0)
-
-	wantFileGone(t, itemPath(root, "cli", "why-item"))
-	changelog := readAll(t, changelogPath(root))
-	wantContains(t, changelog, "duplicate of other-item", "CHANGELOG carries the explicit reason")
-}
-
-// TestCloseNoDisposition covers exit 2 when no disposition flag is given.
-func TestCloseNoDisposition(t *testing.T) {
-	root := mkTree(t)
-	writeItem(t, root, "cli", "nodisp-item", claimedFields("Nodisp item", "cli"), "body")
-	r := runIn(t, root, "backlog", "close", "nodisp-item")
-	wantExit(t, r, 2)
-}
-
-// TestCloseMultipleDispositions covers exit 2 when more than one disposition
-// flag is given (mutually exclusive).
-func TestCloseMultipleDispositions(t *testing.T) {
-	root := mkTree(t)
-	writeItem(t, root, "cli", "multidisp-item", claimedFields("Multidisp item", "cli"), "body")
-	r := runIn(t, root, "backlog", "close", "multidisp-item", "--done", "--discard", "x")
-	wantExit(t, r, 2)
+	writeItem(t, root, "cli", "u", validationFields("U", "cli"), "body")
+	wantExit(t, runIn(t, root, "backlog", "close", "u"), 2)
+	wantExit(t, runIn(t, root, "backlog", "close", "u", "--done", "--discard", "x"), 2)
+	wantExit(t, runIn(t, root, "backlog", "close", "u", "--discard", "--force"), 2)
+	wantExit(t, runIn(t, root, "backlog", "close", "u", "--block", "x"), 2)
 }
 
 // TestCloseNotFound covers exit 4 for a missing id.
 func TestCloseNotFound(t *testing.T) {
 	root := mkTree(t)
-	r := runIn(t, root, "backlog", "close", "ghost-item", "--done")
-	wantExit(t, r, 4)
-}
-
-// TestCloseUnclaimedPrecondition covers exit 6: closing an item that is not in a
-// closeable state (not claimed) — here an approved-but-unclaimed item.
-func TestCloseUnclaimedPrecondition(t *testing.T) {
-	root := mkTree(t)
-	writeItem(t, root, "cli", "unclaimed-item", approvedFields("Unclaimed item", "cli"), "body")
-	r := runIn(t, root, "backlog", "close", "unclaimed-item", "--done")
-	wantExit(t, r, 6)
-	// Still present (not terminated).
-	wantFilePresent(t, itemPath(root, "cli", "unclaimed-item"))
+	wantExit(t, runIn(t, root, "backlog", "close", "ghost-item", "--done"), 4)
 }

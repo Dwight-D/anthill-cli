@@ -6,10 +6,10 @@ import (
 )
 
 // TestNextPicksReady covers `backlog next` selecting a ready item without
-// claiming it (spec §3.5). The item stays approved (not in-progress).
+// claiming it. The item stays triaged (not in-progress).
 func TestNextPicksReady(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "pick-me", approvedFields("Pick me", "cli"), "body")
+	writeItem(t, root, "cli", "pick-me", readyFields("Pick me", "cli"), "body")
 
 	r := runIn(t, root, "--json", "backlog", "next")
 	wantExit(t, r, 0)
@@ -20,7 +20,7 @@ func TestNextPicksReady(t *testing.T) {
 
 	// next must not claim: status remains approved.
 	fm := readFrontmatter(t, itemPath(root, "cli", "pick-me"))
-	if fm["status"] != "approved" {
+	if fm["status"] != "triaged" {
 		t.Fatalf("next must not mutate status, got %q", fm["status"])
 	}
 }

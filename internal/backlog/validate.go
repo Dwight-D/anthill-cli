@@ -2,7 +2,9 @@ package backlog
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -13,12 +15,16 @@ import (
 	"github.com/Dwight-D/anthill-cli/internal/mdfile"
 )
 
-// validateForPersist is the per-write gate shared by new/set/move/claim/close.
-// It rejects writes that would violate the schema at the point of write:
-// missing always-required keys, illegal enum values, malformed value-verdict.
-// It does not require the full triaged field set (incremental triage writes are
-// legal); completeness is certified by the Validate command.
-func (s *Store) validateForPersist(it *Item, isNew bool) error {
+// ErrNeedsMigration indicates the tree holds items written under an earlier
+// schema (no `schema: 2` stamp in workstreams.md); `anthill backlog migrate`
+// upgrades it.
+var ErrNeedsMigration = errors.New("backlog is not on schema 2: run 'anthill backlog migrate' to upgrade it")
+
+// validateForPersist is the per-write gate shared by every write. It rejects
+// writes that would violate the schema at the point of write: missing
+// always-required keys and illegal enum values. Stage completeness and
+// cross-field coherence are certified by Validate.
+func (s *Store) validateForPersist(it *Item) error {
 	if strings.TrimSpace(it.Title) == "" {
 		return invalid("title is required")
 	}
@@ -28,37 +34,27 @@ func (s *Store) validateForPersist(it *Item, isNew bool) error {
 	if it.Status == "" {
 		return invalid("status is required")
 	}
-	if !statuses[it.Status] {
-		return invalid("illegal status %q", it.Status)
-	}
-	// change-type is intentionally not enum-checked on write: its vocabulary is
-	// the project's domain (declared in workstreams.md). Divergence surfaces as a
-	// soft warning at validate/doctor time, not a write rejection.
-	if it.Risk != "" && !risks[it.Risk] {
-		return invalid("illegal risk %q", it.Risk)
-	}
-	if it.Disposition != "" && !dispositions[it.Disposition] {
-		return invalid("illegal disposition %q", it.Disposition)
-	}
-	if it.Priority != "" && !priorities[it.Priority] {
-		return invalid("illegal priority %q", it.Priority)
-	}
-	if it.ValueVerdict != "" && !validValueVerdict(it.ValueVerdict) {
-		return invalid("illegal value-verdict %q (must start with ADVANCE|HOLD|DISCARD)", it.ValueVerdict)
+	for _, k := range []string{"status", "dispatch", "disposition", "priority", "reporter", "risk"} {
+		if v := it.Field(k); v != "" && !EnumValues(k)[v] {
+			return invalid("illegal %s %q", k, v)
+		}
 	}
 	return nil
 }
 
-// Violation is one failed validation check.
+// Violation is one failed validation rule for one item (or file).
 type Violation struct {
 	ID      string `json:"id"`
-	Check   string `json:"check"`
+	Rule    string `json:"rule"`
 	Message string `json:"message"`
 }
 
+// String renders the violation as "<id>: <rule>: <message>".
+func (v Violation) String() string { return v.ID + ": " + v.Rule + ": " + v.Message }
+
 // ValidateResult is the outcome of a full-tree validation. Warnings are
-// advisory (e.g. a change-type outside the project's declared vocabulary): they
-// are reported but never flip OK or affect exit codes.
+// advisory (a change-type outside the project's declared vocabulary): they are
+// reported but never flip OK unless strict promotes them.
 type ValidateResult struct {
 	OK         bool        `json:"ok"`
 	Checked    int         `json:"checked"`
@@ -66,14 +62,44 @@ type ValidateResult struct {
 	Warnings   []Violation `json:"warnings"`
 }
 
-// Validate certifies the backlog tree as schema-well-formed. strict adds the
-// cross-field consistency checks.
+func (r *ValidateResult) add(id, rule, format string, a ...any) {
+	r.Violations = append(r.Violations, Violation{ID: id, Rule: rule, Message: fmt.Sprintf(format, a...)})
+}
+
+// dirKind classifies an item directory.
+type dirKind int
+
+const (
+	kindIntake dirKind = iota
+	kindWorkstream
+	kindDone
+	kindDiscarded
+)
+
+// liveWorkstreamStatuses are the statuses an item in a workstream dir may hold.
+var liveWorkstreamStatuses = map[string]bool{
+	StatusTriaged: true, StatusInProgress: true, StatusValidation: true,
+	StatusBlocked: true, StatusParked: true,
+}
+
+// Validate certifies the backlog tree against the schema-2 rules: frontmatter,
+// unknown-key, location, enum, required (by stage), disposition-coherence,
+// hint-stripped, escalation-ref, stray-file, id-unique. strict promotes
+// warnings to violations. A tree that needs migration returns
+// ErrNeedsMigration.
 func (s *Store) Validate(strict bool) (*ValidateResult, error) {
+	need, err := s.NeedsMigration()
+	if err != nil {
+		return nil, err
+	}
+	if need {
+		return nil, ErrNeedsMigration
+	}
 	res := &ValidateResult{OK: true, Violations: []Violation{}, Warnings: []Violation{}}
 	declared, neverAuto := s.changeTypeConfig()
-	idDirs := map[string][]string{} // id -> dirs it appears in
+	idDirs := map[string][]string{}
 
-	check := func(dir, ws string) error {
+	check := func(dir, label string, kind dirKind) error {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			if os.IsNotExist(err) {
@@ -87,30 +113,26 @@ func (s *Store) Validate(strict bool) (*ValidateResult, error) {
 			}
 			name := e.Name()
 			if !strings.HasSuffix(name, ".md") {
-				// Git housekeeping files legitimately keep an otherwise-empty
-				// workstream directory tracked; they are never backlog items and
-				// must not count as stray files (the scaffolded template ships
-				// .gitkeep in each empty stream dir).
-				if ws != "" && strict && name != ".gitkeep" && name != ".gitignore" {
-					res.add(&Violation{ID: name, Check: "stray-file",
-						Message: fmt.Sprintf("non-item file %q in workstream dir %s", name, ws)})
+				// Git housekeeping files keep an empty dir tracked; they are not
+				// items. Editor temp files are skipped too.
+				if name != ".gitkeep" && name != ".gitignore" && !strings.HasPrefix(name, ".") {
+					res.add(name, "stray-file", "non-item file in %s/", label)
 				}
 				continue
 			}
 			id := strings.TrimSuffix(name, ".md")
-			path := filepath.Join(dir, name)
 			res.Checked++
-			idDirs[id] = append(idDirs[id], dirLabel(ws))
-			data, rerr := os.ReadFile(path)
+			idDirs[id] = append(idDirs[id], label)
+			data, rerr := os.ReadFile(filepath.Join(dir, name))
 			if rerr != nil {
 				return rerr
 			}
-			s.validateFile(res, data, id, ws, strict, declared, neverAuto)
+			s.validateFile(res, data, id, label, kind, declared, neverAuto)
 		}
 		return nil
 	}
 
-	if err := check(s.intakeDir(), ""); err != nil {
+	if err := check(s.intakeDir(), IntakeDir, kindIntake); err != nil {
 		return nil, err
 	}
 	wss, err := s.Workstreams()
@@ -118,181 +140,161 @@ func (s *Store) Validate(strict bool) (*ValidateResult, error) {
 		return nil, err
 	}
 	for _, ws := range wss {
-		if err := check(s.wsDir(ws), ws); err != nil {
+		if err := check(s.wsDir(ws), ws, kindWorkstream); err != nil {
 			return nil, err
 		}
 	}
+	if err := check(s.doneDir(), DoneDir, kindDone); err != nil {
+		return nil, err
+	}
+	if err := check(s.discardedDir(), DiscardedDir, kindDiscarded); err != nil {
+		return nil, err
+	}
 
-	// Uniqueness across intake + workstream dirs.
-	var dupIDs []string
 	for id, dirs := range idDirs {
 		if len(dirs) > 1 {
-			dupIDs = append(dupIDs, id)
+			res.add(id, "id-unique", "id appears in multiple dirs: %s", strings.Join(dirs, ", "))
 		}
 	}
-	sort.Strings(dupIDs)
-	for _, id := range dupIDs {
-		res.add(&Violation{ID: id, Check: "id-unique",
-			Message: fmt.Sprintf("id %q appears in multiple dirs: %s", id, strings.Join(idDirs[id], ", "))})
+	if strict {
+		res.Violations = append(res.Violations, res.Warnings...)
 	}
-
 	res.OK = len(res.Violations) == 0
-	sort.Slice(res.Violations, func(i, j int) bool {
-		if res.Violations[i].ID != res.Violations[j].ID {
-			return res.Violations[i].ID < res.Violations[j].ID
-		}
-		return res.Violations[i].Check < res.Violations[j].Check
-	})
+	sortViolations(res.Violations)
+	sortViolations(res.Warnings)
 	return res, nil
 }
 
-func dirLabel(ws string) string {
-	if ws == "" {
-		return "intake"
-	}
-	return ws
+func sortViolations(vs []Violation) {
+	sort.SliceStable(vs, func(i, j int) bool {
+		if vs[i].ID != vs[j].ID {
+			return vs[i].ID < vs[j].ID
+		}
+		if vs[i].Rule != vs[j].Rule {
+			return vs[i].Rule < vs[j].Rule
+		}
+		return vs[i].Message < vs[j].Message
+	})
 }
 
-func (r *ValidateResult) add(v *Violation)        { r.Violations = append(r.Violations, *v) }
-func (r *ValidateResult) addWarning(v *Violation) { r.Warnings = append(r.Warnings, *v) }
-
-// validateFile checks one item file's bytes against the schema. declared is the
-// project's change-type vocabulary and neverAuto the AUTO-forbidden subset, both
-// from workstreams.md; an empty declared set disables the vocabulary warning.
-func (s *Store) validateFile(res *ValidateResult, data []byte, id, ws string, strict bool, declared, neverAuto map[string]bool) {
+// validateFile checks one item file's bytes. label is the containing dir name.
+func (s *Store) validateFile(res *ValidateResult, data []byte, id, label string, kind dirKind, declared, neverAuto map[string]bool) {
 	fm, body, err := mdfile.Split(data)
 	if err != nil {
-		res.add(&Violation{ID: id, Check: "frontmatter", Message: err.Error()})
+		res.add(id, "frontmatter", "%s", err.Error())
 		return
 	}
-	// Unknown-key typo guard via strict YAML decoding.
 	dec := yaml.NewDecoder(bytes.NewReader(fm))
 	dec.KnownFields(true)
 	var strictItem Item
-	if err := dec.Decode(&strictItem); err != nil {
-		res.add(&Violation{ID: id, Check: "unknown-key", Message: err.Error()})
+	if err := dec.Decode(&strictItem); err != nil && !errors.Is(err, io.EOF) {
+		res.add(id, "unknown-key", "%s", err.Error())
 	}
-
 	var it Item
 	if err := yaml.Unmarshal(fm, &it); err != nil {
-		res.add(&Violation{ID: id, Check: "frontmatter", Message: err.Error()})
+		res.add(id, "frontmatter", "%s", err.Error())
 		return
 	}
 	it.ID = id
 	it.Body = body
 
-	// Directory / workstream coherence.
-	if ws == "" {
+	// location: the directory and the item's workstream/status agree.
+	switch kind {
+	case kindIntake:
 		if it.Workstream != "" {
-			res.add(&Violation{ID: id, Check: "location",
-				Message: fmt.Sprintf("item in intake/ carries workstream %q", it.Workstream)})
+			res.add(id, "location", "item in intake/ carries workstream %q", it.Workstream)
 		}
-	} else if it.Workstream != ws {
-		res.add(&Violation{ID: id, Check: "location",
-			Message: fmt.Sprintf("item in %s/ has workstream %q", ws, it.Workstream)})
+		if it.Status != StatusNew && it.Status != StatusParked && statuses[it.Status] {
+			res.add(id, "location", "item in intake/ has status %s (want new or parked)", it.Status)
+		}
+	case kindWorkstream:
+		if it.Workstream != label {
+			res.add(id, "location", "item in %s/ has workstream %q", label, it.Workstream)
+		}
+		if !liveWorkstreamStatuses[it.Status] && statuses[it.Status] {
+			res.add(id, "location", "item in %s/ has status %s (want triaged, in-progress, validation, blocked or parked)", label, it.Status)
+		}
+	case kindDone:
+		if it.Status != StatusDone && statuses[it.Status] {
+			res.add(id, "location", "item in done/ has status %s", it.Status)
+		}
+	case kindDiscarded:
+		if it.Status != StatusDiscarded && statuses[it.Status] {
+			res.add(id, "location", "item in discarded/ has status %s", it.Status)
+		}
 	}
 
-	// Enum legality.
-	if it.Status == "" || !statuses[it.Status] {
-		res.add(&Violation{ID: id, Check: "enum", Message: fmt.Sprintf("illegal or missing status %q", it.Status)})
+	// enum legality.
+	if it.Status != "" && !statuses[it.Status] {
+		res.add(id, "enum", "illegal status %q", it.Status)
 	}
-	// change-type: soft-checked against the project's declared vocabulary. An
-	// out-of-vocabulary value is advisory (helps agents converge on one menu),
-	// never a hard violation. No declared set → free-form, no warning.
+	for _, k := range []string{"dispatch", "disposition", "priority", "reporter", "risk"} {
+		if v := it.Field(k); v != "" && !EnumValues(k)[v] {
+			res.add(id, "enum", "illegal %s %q", k, v)
+		}
+	}
 	if len(declared) > 0 && it.ChangeType != "" && !declared[it.ChangeType] {
-		res.addWarning(&Violation{ID: id, Check: "change-type-vocab",
+		res.Warnings = append(res.Warnings, Violation{ID: id, Rule: "change-type-vocab",
 			Message: fmt.Sprintf("change-type %q is outside the declared vocabulary", it.ChangeType)})
 	}
-	if it.Risk != "" && !risks[it.Risk] {
-		res.add(&Violation{ID: id, Check: "enum", Message: fmt.Sprintf("illegal risk %q", it.Risk)})
-	}
-	if it.Disposition != "" && !dispositions[it.Disposition] {
-		res.add(&Violation{ID: id, Check: "enum", Message: fmt.Sprintf("illegal disposition %q", it.Disposition)})
-	}
-	if it.Priority != "" && !priorities[it.Priority] {
-		res.add(&Violation{ID: id, Check: "enum", Message: fmt.Sprintf("illegal priority %q", it.Priority)})
-	}
-	if it.ValueVerdict != "" && !validValueVerdict(it.ValueVerdict) {
-		res.add(&Violation{ID: id, Check: "enum", Message: fmt.Sprintf("illegal value-verdict %q", it.ValueVerdict)})
+
+	// required, by stage.
+	for _, k := range requiredMissing(&it, kind) {
+		res.add(id, "required", "missing %s for status %s", k, orDash(it.Status))
 	}
 
-	// Stage-required keys.
-	missing := requiredMissing(&it, ws != "")
-	for _, k := range missing {
-		res.add(&Violation{ID: id, Check: "required", Message: fmt.Sprintf("missing required key %q for its stage", k)})
-	}
-
-	if strict {
-		s.strictChecks(res, &it, id, neverAuto)
-	}
-}
-
-func requiredMissing(it *Item, triaged bool) []string {
-	var missing []string
-	if strings.TrimSpace(it.Title) == "" {
-		missing = append(missing, "title")
-	}
-	if strings.TrimSpace(it.Value) == "" {
-		missing = append(missing, "value")
-	}
-	if it.Status == "" {
-		missing = append(missing, "status")
-	}
-	if triaged {
-		if it.Workstream == "" {
-			missing = append(missing, "workstream")
-		}
-		if it.ChangeType == "" {
-			missing = append(missing, "change-type")
-		}
-		if it.Risk == "" {
-			missing = append(missing, "risk")
-		}
-		if it.Verify == "" {
-			missing = append(missing, "verify")
-		}
-		if it.ValueVerdict == "" {
-			missing = append(missing, "value-verdict")
-		}
-		if it.Disposition == "" {
-			missing = append(missing, "disposition")
-		}
-	}
-	return missing
-}
-
-// strictChecks are the added cross-field consistency checks under --strict.
-// neverAuto is the project's AUTO-forbidden change-type set (from workstreams.md).
-func (s *Store) strictChecks(res *ValidateResult, it *Item, id string, neverAuto map[string]bool) {
-	// 5. Ready-consistency.
-	if it.Status == "approved" && (it.Verify == "" || it.Verify == "none") {
-		res.add(&Violation{ID: id, Check: "ready-consistency",
-			Message: "status is approved but verify is empty/none"})
-	}
-	// 6. Disposition coherence.
-	if it.Disposition == "AUTO" {
-		if it.Verify == "none" || it.Verify == "" {
-			res.add(&Violation{ID: id, Check: "disposition-coherence",
-				Message: "disposition AUTO requires a non-none verify"})
+	// disposition-coherence.
+	if it.Disposition == "auto" {
+		if !RealVerify(it.Verify) {
+			res.add(id, "disposition-coherence", "disposition auto requires a real verify (not empty or none)")
 		}
 		if neverAuto[it.ChangeType] {
-			res.add(&Violation{ID: id, Check: "disposition-coherence",
-				Message: fmt.Sprintf("disposition AUTO illegal for never-auto change-type %q", it.ChangeType)})
+			res.add(id, "disposition-coherence", "disposition auto is illegal for never-auto change-type %q", it.ChangeType)
 		}
 	}
-	// 7. No hint survives on a triaged item.
-	if it.Workstream != "" && it.Hint != "" {
-		res.add(&Violation{ID: id, Check: "hint-stripped",
-			Message: "triaged item still carries a hint key"})
+
+	// hint-stripped: a hint survives only in intake.
+	if kind != kindIntake && it.Hint != "" {
+		res.add(id, "hint-stripped", "item outside intake/ still carries a hint")
 	}
-	// 8. escalated: <file> note points at an existing escalation record.
+
+	// escalation-ref: an "escalated: <file>" note points at an existing record.
 	if f, ok := escalatedFile(it.Note); ok {
 		p := filepath.Join(s.root, ".anthill", "escalations", f)
 		if _, err := os.Stat(p); err != nil {
-			res.add(&Violation{ID: id, Check: "escalation-ref",
-				Message: fmt.Sprintf("note references missing escalation record %q", f)})
+			res.add(id, "escalation-ref", "note references missing escalation record %q", f)
 		}
 	}
+}
+
+// requiredMissing lists the keys the item's stage requires but lacks.
+func requiredMissing(it *Item, kind dirKind) []string {
+	var missing []string
+	need := func(keys ...string) {
+		for _, k := range keys {
+			if strings.TrimSpace(it.Field(k)) == "" {
+				missing = append(missing, k)
+			}
+		}
+	}
+	need("title", "value", "status", "dispatch", "reporter", "created-at")
+	switch it.Status {
+	case StatusTriaged, StatusInProgress, StatusValidation, StatusBlocked:
+		need(TriagedRequired...)
+	case StatusParked:
+		if kind == kindWorkstream {
+			need(TriagedRequired...)
+		}
+	case StatusDone, StatusDiscarded:
+		need("closed-at")
+	}
+	switch it.Status {
+	case StatusInProgress, StatusBlocked:
+		need("claimed-at")
+	case StatusValidation:
+		need("claimed-at", "delivered-at")
+	}
+	return missing
 }
 
 // escalatedFile extracts the "<file>" from a note of the form "escalated: <file>".

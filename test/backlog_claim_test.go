@@ -3,10 +3,10 @@ package e2e_test
 import "testing"
 
 // TestClaimSuccess covers `backlog claim <id>` transitioning a ready item to
-// in-progress and stamping a claimed-at marker (spec §3.6, §7 Q4).
+// in-progress and stamping claimed-at / claimed-by / session (§2, §5).
 func TestClaimSuccess(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "claim-me", approvedFields("Claim me", "cli"), "the body")
+	writeItem(t, root, "cli", "claim-me", readyFields("Claim me", "cli"), "the body")
 
 	r := runIn(t, root, "backlog", "claim", "claim-me")
 	wantExit(t, r, 0)
@@ -20,13 +20,62 @@ func TestClaimSuccess(t *testing.T) {
 	if fm["claimed-at"] == "" {
 		t.Fatalf("claim must stamp a non-empty claimed-at field, got %q", fm["claimed-at"])
 	}
+	if fm["claimed-by"] == "" {
+		t.Fatal("claim must stamp claimed-by (OS user fallback)")
+	}
+	if _, ok := fm["session"]; ok {
+		t.Fatalf("no session known: session must stay empty, got %q", fm["session"])
+	}
+	wantContains(t, readAll(t, itemPath(root, "cli", "claim-me")), " claim by ", "Log after claim")
+}
+
+// TestClaimStampsFromEnv covers §5: ANTHILL_ACTOR → claimed-by and
+// CLAUDE_CODE_SESSION_ID → session.
+func TestClaimStampsFromEnv(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "env-claim", readyFields("Env claim", "cli"), "body")
+	r := runEnv(t, root, []string{"ANTHILL_ACTOR=supervisor:cli-worker", "CLAUDE_CODE_SESSION_ID=2f1c9a00-1111-2222"},
+		"backlog", "claim", "env-claim")
+	wantExit(t, r, 0)
+	fm := readFrontmatter(t, itemPath(root, "cli", "env-claim"))
+	if fm["claimed-by"] != "supervisor:cli-worker" || fm["session"] != "2f1c9a00-1111-2222" {
+		t.Fatalf("stamps = by %q session %q", fm["claimed-by"], fm["session"])
+	}
+	wantContains(t, readAll(t, itemPath(root, "cli", "env-claim")), "claim by supervisor:cli-worker (session 2f1c9a00…)", "Log line")
+}
+
+// TestClaimFlagsBeatEnv covers --by / --session taking precedence over env.
+func TestClaimFlagsBeatEnv(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "flag-claim", readyFields("Flag claim", "cli"), "body")
+	r := runEnv(t, root, []string{"ANTHILL_ACTOR=env-actor", "CLAUDE_CODE_SESSION_ID=env-session"},
+		"backlog", "claim", "flag-claim", "--by", "worker-b", "--session", "flag-session")
+	wantExit(t, r, 0)
+	fm := readFrontmatter(t, itemPath(root, "cli", "flag-claim"))
+	if fm["claimed-by"] != "worker-b" || fm["session"] != "flag-session" {
+		t.Fatalf("stamps = by %q session %q", fm["claimed-by"], fm["session"])
+	}
+}
+
+// TestClaimRoleSessionFallback covers §5's third tier: with no handle and no
+// ANTHILL_ACTOR but a harness session, claimed-by is <role>:<session prefix>.
+func TestClaimRoleSessionFallback(t *testing.T) {
+	root := mkTree(t)
+	writeItem(t, root, "cli", "role-claim", readyFields("Role claim", "cli"), "body")
+	r := runEnv(t, root, []string{"CLAUDECODE=1", "CLAUDE_CODE_SESSION_ID=abcdef0123456789"},
+		"backlog", "claim", "role-claim")
+	wantExit(t, r, 0)
+	fm := readFrontmatter(t, itemPath(root, "cli", "role-claim"))
+	if fm["claimed-by"] != "worker:abcdef01" {
+		t.Fatalf("claimed-by = %q, want worker:abcdef01", fm["claimed-by"])
+	}
 }
 
 // TestClaimConflict covers exit 5 (conflict): a second claim of an already
 // in-progress item WITHOUT --force fails the compare-and-set (spec §3.6, §7 Q4).
 func TestClaimConflict(t *testing.T) {
 	root := mkTree(t)
-	f := approvedFields("Taken item", "cli")
+	f := readyFields("Taken item", "cli")
 	f["status"] = "in-progress"
 	f["claimed-at"] = "2026-07-20T10:00:00Z"
 	writeItem(t, root, "cli", "taken-item", f, "body")
@@ -43,7 +92,7 @@ func TestClaimConflict(t *testing.T) {
 // TestClaimForceReclaims covers `claim --force` reclaiming an in-progress orphan.
 func TestClaimForceReclaims(t *testing.T) {
 	root := mkTree(t)
-	f := approvedFields("Orphan item", "cli")
+	f := readyFields("Orphan item", "cli")
 	f["status"] = "in-progress"
 	f["claimed-at"] = "2026-07-20T10:00:00Z"
 	writeItem(t, root, "cli", "orphan-item", f, "body")
@@ -56,16 +105,17 @@ func TestClaimForceReclaims(t *testing.T) {
 	}
 }
 
-// TestClaimNotReadyPrecondition covers exit 6: claiming a non-ready (idea) item
-// without --force is a precondition failure (spec §3.6).
+// TestClaimNotReadyPrecondition covers exit 6: claiming a new item is refused
+// even with --force (only triaged items are claimable).
 func TestClaimNotReadyPrecondition(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "intake", "not-ready-claim", ideaFields("Not ready claim"), "body")
+	writeItem(t, root, "intake", "not-ready-claim", newFields("Not ready claim"), "body")
 	r := runIn(t, root, "backlog", "claim", "not-ready-claim")
 	wantExit(t, r, 6)
+	wantExit(t, runIn(t, root, "backlog", "claim", "not-ready-claim", "--force"), 6)
 	fm := readFrontmatter(t, itemPath(root, "intake", "not-ready-claim"))
-	if fm["status"] != "idea" {
-		t.Fatalf("failed claim must leave status idea, got %q", fm["status"])
+	if fm["status"] != "new" {
+		t.Fatalf("failed claim must leave status new, got %q", fm["status"])
 	}
 }
 
@@ -73,9 +123,10 @@ func TestClaimNotReadyPrecondition(t *testing.T) {
 // a human naming an item is an explicit override).
 func TestClaimForceNonReady(t *testing.T) {
 	root := mkTree(t)
-	f := approvedFields("Forced not ready", "cli")
-	f["status"] = "idea"
+	f := readyFields("Forced not ready", "cli")
+	f["dispatch"] = "proposed"
 	writeItem(t, root, "cli", "forced-not-ready", f, "body")
+	wantExit(t, runIn(t, root, "backlog", "claim", "forced-not-ready"), 6)
 	r := runIn(t, root, "backlog", "claim", "forced-not-ready", "--force")
 	wantExit(t, r, 0)
 	fm := readFrontmatter(t, itemPath(root, "cli", "forced-not-ready"))
@@ -94,7 +145,7 @@ func TestClaimNotFound(t *testing.T) {
 // TestClaimNext covers `claim --next` claiming the item next would select.
 func TestClaimNext(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "next-claim", approvedFields("Next claim", "cli"), "body")
+	writeItem(t, root, "cli", "next-claim", readyFields("Next claim", "cli"), "body")
 	r := runIn(t, root, "backlog", "claim", "--next")
 	wantExit(t, r, 0)
 	fm := readFrontmatter(t, itemPath(root, "cli", "next-claim"))
@@ -115,7 +166,7 @@ func TestClaimNextEmpty(t *testing.T) {
 // TestClaimJSON confirms the claimed item object under --json.
 func TestClaimJSON(t *testing.T) {
 	root := mkTree(t)
-	writeItem(t, root, "cli", "json-claim", approvedFields("Json claim", "cli"), "body")
+	writeItem(t, root, "cli", "json-claim", readyFields("Json claim", "cli"), "body")
 	r := runIn(t, root, "--json", "backlog", "claim", "json-claim")
 	wantExit(t, r, 0)
 	obj := jsonObj(t, r.stdout)

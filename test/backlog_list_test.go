@@ -6,10 +6,10 @@ import "testing"
 // item, and one non-ready (idea) cli item.
 func seedMixed(t *testing.T) string {
 	root := mkTree(t)
-	writeItem(t, root, "intake", "an-idea", ideaFields("An idea"), "body")
-	writeItem(t, root, "cli", "ready-one", approvedFields("Ready one", "cli"), "body")
-	notReady := approvedFields("Not ready", "cli")
-	notReady["status"] = "idea"
+	writeItem(t, root, "intake", "an-idea", newFields("An idea"), "body")
+	writeItem(t, root, "cli", "ready-one", readyFields("Ready one", "cli"), "body")
+	notReady := readyFields("Not ready", "cli")
+	notReady["dispatch"] = "proposed"
 	writeItem(t, root, "cli", "not-ready", notReady, "body")
 	return root
 }
@@ -68,11 +68,11 @@ func TestListUntriagedFilter(t *testing.T) {
 // TestListStatusFilter covers --status filtering by lifecycle status.
 func TestListStatusFilter(t *testing.T) {
 	root := seedMixed(t)
-	r := runIn(t, root, "--json", "backlog", "list", "--status", "approved")
+	r := runIn(t, root, "--json", "backlog", "list", "--status", "new")
 	wantExit(t, r, 0)
 	arr := jsonArr(t, r.stdout)
-	if len(arr) != 1 || arr[0]["id"] != "ready-one" {
-		t.Fatalf("--status approved should return only ready-one, got: %s", r.stdout)
+	if len(arr) != 1 || arr[0]["id"] != "an-idea" {
+		t.Fatalf("--status new should return only an-idea, got: %s", r.stdout)
 	}
 }
 

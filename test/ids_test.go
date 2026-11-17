@@ -63,7 +63,7 @@ func TestIdCollisionSuffix(t *testing.T) {
 func TestIdCollisionAcrossDirs(t *testing.T) {
 	root := mkTree(t)
 	// Pre-seed a workstream item with the id the new title would slug to.
-	writeItem(t, root, "cli", "shared-slug", approvedFields("Shared slug", "cli"), "body")
+	writeItem(t, root, "cli", "shared-slug", readyFields("Shared slug", "cli"), "body")
 
 	got := newID(t, root, "Shared slug")
 	if got != "shared-slug-2" {

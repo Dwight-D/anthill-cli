@@ -1,12 +1,14 @@
 package backlog
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// newTestStore builds an initialized .anthill tree in a temp dir.
+// newTestStore builds an initialized schema-2 .anthill tree in a temp dir.
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 	root := t.TempDir()
@@ -18,16 +20,20 @@ func newTestStore(t *testing.T) *Store {
 	if err := os.MkdirAll(filepath.Join(root, ".anthill", "escalations"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	ws := "---\nsweep-order: bugs, cli, dev, process\nnever-implicit:\n---\n"
+	ws := "---\nschema: 2\nsweep-order: bugs, cli, dev, process\nnever-implicit:\n---\n"
 	if err := os.WriteFile(filepath.Join(root, ".anthill", "backlog", "workstreams.md"), []byte(ws), 0o644); err != nil {
 		t.Fatal(err)
 	}
+	t.Setenv(EnvActor, "")
+	t.Setenv(EnvSession, "")
+	t.Setenv(EnvReporter, "")
+	t.Setenv(EnvClaude, "")
 	return NewStore(root)
 }
 
 func TestNewAndFindRoundTrip(t *testing.T) {
 	s := newTestStore(t)
-	it, err := s.New(NewParams{Title: "Add a JSON flag", Value: "machine output", Source: "smoke", Hint: "cli"})
+	it, err := s.New(NewParams{Title: "Add a JSON flag", Value: "machine output", Source: "smoke", Hint: "cli", Description: "do it"})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -38,127 +44,139 @@ func TestNewAndFindRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Find: %v", err)
 	}
-	if got.Title != "Add a JSON flag" || got.Value != "machine output" ||
-		got.Hint != "cli" || got.Status != "idea" || got.Source != "smoke" {
+	if got.Title != "Add a JSON flag" || got.Status != StatusNew || got.Dispatch != DispatchProposed ||
+		got.Reporter != "user" || got.Priority != "normal" || got.CreatedAt == "" || got.Hint != "cli" {
 		t.Fatalf("round-trip mismatch: %+v", got)
 	}
-	if got.Workstream != "" {
-		t.Fatalf("intake item should have no workstream, got %q", got.Workstream)
+	secs := got.Sections()
+	if secs["Description"] != "do it" {
+		t.Fatalf("description section = %q", secs["Description"])
+	}
+	if !strings.Contains(secs["Log"], " new by ") {
+		t.Fatalf("log missing new line: %q", secs["Log"])
 	}
 }
 
-func TestIntakeToWorkstreamMoveStripsHint(t *testing.T) {
-	s := newTestStore(t)
-	it, err := s.New(NewParams{Title: "Move me", Value: "v", Hint: "dev"})
+// triaged creates an item and triages it into cli as a ready-able auto item.
+func triaged(t *testing.T, s *Store, title string) *Item {
+	t.Helper()
+	it, err := s.New(NewParams{Title: title, Value: "v", Hint: "dev"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldPath := it.Path
-	it.Hint = "" // triage strips hint on the move out of intake
-	if err := s.Move(it, "cli"); err != nil {
-		t.Fatalf("Move: %v", err)
+	err = s.Triage(it, map[string]string{
+		"workstream": "cli", "summary": "s", "change-type": "doc", "risk": "additive",
+		"verify": "go test ./...", "disposition": "auto",
+	}, "worth it", "triager")
+	if err != nil {
+		t.Fatalf("Triage: %v", err)
 	}
-	if _, err := os.Stat(oldPath); !os.IsNotExist(err) {
-		t.Fatalf("old intake file still present at %s", oldPath)
-	}
+	return it
+}
+
+func TestTriageMovesStripsHintAndLogs(t *testing.T) {
+	s := newTestStore(t)
+	it := triaged(t, s, "Move me")
 	got, err := s.Find(it.ID)
 	if err != nil {
-		t.Fatalf("Find after move: %v", err)
+		t.Fatal(err)
 	}
-	if got.Workstream != "cli" {
-		t.Fatalf("workstream = %q, want cli", got.Workstream)
+	if got.Workstream != "cli" || got.Hint != "" || got.Status != StatusTriaged || got.TriagedAt == "" {
+		t.Fatalf("triage result: %+v", got)
 	}
-	if got.Hint != "" {
-		t.Fatalf("hint should be stripped, got %q", got.Hint)
+	if got.Path != filepath.Join(s.wsDir("cli"), it.ID+".md") {
+		t.Fatalf("path = %q", got.Path)
 	}
-	wantPath := filepath.Join(s.wsDir("cli"), it.ID+".md")
-	if got.Path != wantPath {
-		t.Fatalf("path = %q, want %q", got.Path, wantPath)
+	if _, err := os.Stat(filepath.Join(s.intakeDir(), it.ID+".md")); !os.IsNotExist(err) {
+		t.Fatal("intake file still present")
+	}
+	if got.Sections()["Triage"] != "worth it" {
+		t.Fatalf("triage section = %q", got.Sections()["Triage"])
+	}
+}
+
+func TestTriageRequiresFieldSet(t *testing.T) {
+	s := newTestStore(t)
+	it, _ := s.New(NewParams{Title: "x", Value: "v"})
+	err := s.Triage(it, map[string]string{"workstream": "cli"}, "", "")
+	var ve *ValidationError
+	if !errors.As(err, &ve) || !strings.Contains(ve.Msg, "summary") {
+		t.Fatalf("want validation error naming summary, got %v", err)
 	}
 }
 
 func TestMoveToUnknownWorkstreamRejected(t *testing.T) {
 	s := newTestStore(t)
 	it, _ := s.New(NewParams{Title: "x", Value: "v"})
-	err := s.Move(it, "nope")
 	var ve *ValidationError
-	if err == nil {
-		t.Fatal("expected validation error for unknown workstream")
-	}
-	if !asValidation(err, &ve) {
+	if err := s.Move(it, "nope"); !errors.As(err, &ve) {
 		t.Fatalf("expected *ValidationError, got %T: %v", err, err)
 	}
 }
 
-func asValidation(err error, target **ValidationError) bool {
-	if ve, ok := err.(*ValidationError); ok {
-		*target = ve
-		return true
-	}
-	return false
-}
-
-func TestClaimCAS(t *testing.T) {
+func TestLifecycleHappyPath(t *testing.T) {
 	s := newTestStore(t)
-	it, _ := s.New(NewParams{Title: "Claimable", Value: "v"})
-	it.Hint = ""
-	if err := s.Move(it, "cli"); err != nil {
+	it := triaged(t, s, "Work")
+	if _, err := s.SetDispatch(it, DispatchApproved, "user"); err != nil {
 		t.Fatal(err)
 	}
-	// Bring it to a ready state: approved + verify.
-	cur, _ := s.Find(it.ID)
-	cur.Status = "approved"
-	cur.Verify = "go test ./... exit 0"
-	cur.ChangeType = "new-flag"
-	cur.Risk = "additive"
-	cur.ValueVerdict = "ADVANCE — worth it"
-	cur.Disposition = "REVIEW"
-	if err := s.Save(cur); err != nil {
-		t.Fatalf("Save approved: %v", err)
+	if !it.Ready() {
+		t.Fatal("approved auto item with verify should be ready")
 	}
-	if !cur.Ready() {
-		t.Fatal("item should be ready")
+	t.Setenv(EnvSession, "2f1c0000-aaaa")
+	c, err := s.Claim(it, "worker-a", "", false)
+	if err != nil {
+		t.Fatalf("Claim: %v", err)
 	}
-
-	// Simulate a claim: read, CAS on status, write in-progress.
-	fresh, _ := s.Find(it.ID)
-	if fresh.Status != "approved" {
-		t.Fatalf("expected approved, got %s", fresh.Status)
+	if c.ClaimedBy != "worker-a" || c.Session != "2f1c0000-aaaa" || c.Status != StatusInProgress {
+		t.Fatalf("claim stamps: %+v", c)
 	}
-	fresh.Status = "in-progress"
-	fresh.ClaimedAt = "2026-07-20T00:00:00Z"
-	if err := s.Save(fresh); err != nil {
-		t.Fatalf("Save claim: %v", err)
+	if err := s.Deliver(c, "someone-else", "ran", false); err == nil {
+		t.Fatal("non-claimant deliver must be refused")
 	}
-	got, _ := s.Find(it.ID)
-	if got.Status != "in-progress" || got.ClaimedAt == "" {
-		t.Fatalf("claim not persisted: status=%q claimed-at=%q", got.Status, got.ClaimedAt)
+	if err := s.Deliver(c, "worker-a", "go test exit 0", false); err != nil {
+		t.Fatalf("Deliver: %v", err)
 	}
-}
-
-func TestValidateStrictCatchesReadyInconsistency(t *testing.T) {
-	s := newTestStore(t)
-	// Hand-write an approved item with an empty verify into cli/.
-	content := "---\nworkstream: cli\ntitle: t\nvalue: v\nchange-type: doc\nrisk: additive\n" +
-		"verify: none\nvalue-verdict: ADVANCE — x\ndisposition: REVIEW\nstatus: approved\n---\n"
-	if err := os.WriteFile(filepath.Join(s.wsDir("cli"), "bad.md"), []byte(content), 0o644); err != nil {
-		t.Fatal(err)
+	if !strings.Contains(c.Sections()["Evidence"], "go test exit 0") {
+		t.Fatalf("evidence: %q", c.Sections()["Evidence"])
 	}
-	res, err := s.Validate(true)
+	if _, err := s.Close(c, CloseDone, "", "ctl", false); err != nil {
+		t.Fatalf("Close done: %v", err)
+	}
+	got, err := s.Find(it.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.OK {
-		t.Fatal("expected strict validation to flag approved+none-verify")
+	if got.Status != StatusDone || got.ClosedAt == "" || filepath.Base(filepath.Dir(got.Path)) != DoneDir {
+		t.Fatalf("done item: %+v", got)
 	}
-	found := false
-	for _, v := range res.Violations {
-		if v.Check == "ready-consistency" {
-			found = true
+	log := got.Sections()["Log"]
+	for _, verb := range []string{"new", "triage", "approve", "claim by worker-a (session 2f1c0000…)", "deliver", "close --done"} {
+		if !strings.Contains(log, verb) {
+			t.Fatalf("log lacks %q:\n%s", verb, log)
 		}
 	}
-	if !found {
-		t.Fatalf("missing ready-consistency violation: %+v", res.Violations)
+}
+
+func TestValidateNeedsMigrationWithoutStamp(t *testing.T) {
+	s := newTestStore(t)
+	if _, err := s.New(NewParams{Title: "x", Value: "v"}); err != nil {
+		t.Fatal(err)
+	}
+	writeWorkstreamsFrontmatter(t, s, "sweep-order: cli\n")
+	if _, err := s.Validate(false); !errors.Is(err, ErrNeedsMigration) {
+		t.Fatalf("want ErrNeedsMigration, got %v", err)
+	}
+}
+
+func TestNewStampsSchemaOnEmptyTree(t *testing.T) {
+	s := newTestStore(t)
+	writeWorkstreamsFrontmatter(t, s, "sweep-order: cli\n")
+	if _, err := s.New(NewParams{Title: "first", Value: "v"}); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := s.SchemaVersion(); v != CurrentSchema {
+		t.Fatalf("schema = %d, want %d", v, CurrentSchema)
 	}
 }
 
@@ -172,71 +190,95 @@ func writeWorkstreamsFrontmatter(t *testing.T, s *Store, fm string) {
 	}
 }
 
-// writeApprovedItem hand-writes a ready cli/ item with the given change-type and
-// disposition (verify non-none, so only the change-type/disposition are at play).
-func writeApprovedItem(t *testing.T, s *Store, id, changeType, disposition string) {
+// writeTriagedItem hand-writes a triaged cli/ item with the given change-type
+// and disposition (verify real, so only change-type/disposition are at play).
+func writeTriagedItem(t *testing.T, s *Store, id, changeType, disposition string) {
 	t.Helper()
-	content := "---\nworkstream: cli\ntitle: t\nvalue: v\nchange-type: " + changeType +
-		"\nrisk: additive\nverify: go test ./...\nvalue-verdict: ADVANCE — x\ndisposition: " +
-		disposition + "\nstatus: approved\n---\n"
+	content := "---\ntitle: t\nsummary: s\nvalue: v\nworkstream: cli\nstatus: triaged\ndispatch: approved\n" +
+		"disposition: " + disposition + "\npriority: normal\nreporter: user\nchange-type: " + changeType +
+		"\nrisk: additive\nverify: go test ./...\ncreated-at: \"2026-11-17T00:00:00Z\"\n---\n"
 	if err := os.WriteFile(filepath.Join(s.wsDir("cli"), id+".md"), []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
 
-// TestValidateChangeTypeVocabularyWarns: a change-type outside the project's
-// declared vocabulary is a warning, not a violation, and never fails validation.
 func TestValidateChangeTypeVocabularyWarns(t *testing.T) {
 	s := newTestStore(t)
-	writeWorkstreamsFrontmatter(t, s, "sweep-order: bugs, cli, dev, process\nnever-implicit:\nchange-types: doc, tooling\n")
-	writeApprovedItem(t, s, "good", "doc", "REVIEW")
-	writeApprovedItem(t, s, "bad", "wildcard", "REVIEW")
+	writeWorkstreamsFrontmatter(t, s, "schema: 2\nsweep-order: bugs, cli, dev, process\nchange-types: doc, tooling\n")
+	writeTriagedItem(t, s, "good", "doc", "design")
+	writeTriagedItem(t, s, "bad", "wildcard", "design")
 
-	res, err := s.Validate(true)
+	res, err := s.Validate(false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !res.OK {
 		t.Fatalf("out-of-vocabulary change-type must not fail validation; violations=%+v", res.Violations)
 	}
-	if len(res.Warnings) != 1 || res.Warnings[0].ID != "bad" || res.Warnings[0].Check != "change-type-vocab" {
+	if len(res.Warnings) != 1 || res.Warnings[0].ID != "bad" || res.Warnings[0].Rule != "change-type-vocab" {
 		t.Fatalf("expected one change-type-vocab warning for 'bad', got %+v", res.Warnings)
 	}
-}
-
-// TestValidateChangeTypeFreeFormWhenUndeclared: with no declared vocabulary, any
-// change-type is accepted with no warning.
-func TestValidateChangeTypeFreeFormWhenUndeclared(t *testing.T) {
-	s := newTestStore(t) // newTestStore declares no change-types
-	writeApprovedItem(t, s, "anything", "some-novel-type", "REVIEW")
-
-	res, err := s.Validate(true)
+	res, err = s.Validate(true)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !res.OK || len(res.Warnings) != 0 {
-		t.Fatalf("undeclared vocabulary must be free-form (no warnings); ok=%v warnings=%+v", res.OK, res.Warnings)
+	if res.OK {
+		t.Fatal("--strict must promote the vocabulary warning to a violation")
 	}
 }
 
-// TestValidateNeverAutoFromConfig: never-auto-change-types in workstreams.md
-// drives the disposition-coherence check (AUTO on a never-auto type is illegal).
 func TestValidateNeverAutoFromConfig(t *testing.T) {
 	s := newTestStore(t)
-	writeWorkstreamsFrontmatter(t, s, "sweep-order: bugs, cli, dev, process\nnever-implicit:\nchange-types: doc, design\nnever-auto-change-types: design\n")
-	writeApprovedItem(t, s, "auto-design", "design", "AUTO")
+	writeWorkstreamsFrontmatter(t, s, "schema: 2\nsweep-order: cli\nchange-types: doc, design\nnever-auto-change-types: design\n")
+	writeTriagedItem(t, s, "auto-design", "design", "auto")
 
-	res, err := s.Validate(true)
+	res, err := s.Validate(false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	found := false
 	for _, v := range res.Violations {
-		if v.Check == "disposition-coherence" {
+		if v.Rule == "disposition-coherence" && v.ID == "auto-design" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("expected disposition-coherence violation for AUTO on never-auto type; got %+v", res.Violations)
+		t.Fatalf("expected disposition-coherence violation; got %+v", res.Violations)
+	}
+}
+
+func TestSortRank(t *testing.T) {
+	mk := func(id, ws, dispatch, prio, created string) *Item {
+		return &Item{ID: id, Workstream: ws, Dispatch: dispatch, Priority: prio, CreatedAt: created}
+	}
+	order := []string{"bugs", "cli"}
+	items := []*Item{
+		mk("cli-old-normal", "cli", "approved", "normal", "2026-01-01T00:00:00Z"),
+		mk("cli-new-normal", "cli", "approved", "normal", "2026-02-01T00:00:00Z"),
+		mk("bugs-normal", "bugs", "approved", "normal", "2026-03-01T00:00:00Z"),
+		mk("cli-high", "cli", "approved", "high", "2026-03-01T00:00:00Z"),
+		mk("ft-low", "cli", "fast-tracked", "low", "2026-03-01T00:00:00Z"),
+		mk("intake-high", "", "proposed", "high", "2026-01-01T00:00:00Z"),
+		mk("cli-low", "cli", "approved", "low", "2025-01-01T00:00:00Z"),
+		mk("cli-nostamp", "cli", "approved", "", ""),
+	}
+	SortItems(items, "rank", order, false)
+	want := []string{"ft-low", "cli-high", "intake-high", "bugs-normal", "cli-old-normal", "cli-new-normal", "cli-nostamp", "cli-low"}
+	for i, id := range want {
+		if items[i].ID != id {
+			got := make([]string, len(items))
+			for j, it := range items {
+				got[j] = it.ID
+			}
+			t.Fatalf("rank order = %v, want %v", got, want)
+		}
+	}
+	SortItems(items, "rank", order, true)
+	if items[0].ID != "cli-low" || items[len(items)-1].ID != "ft-low" {
+		t.Fatalf("reverse rank: first=%s last=%s", items[0].ID, items[len(items)-1].ID)
+	}
+	SortItems(items, "age", order, false)
+	if items[0].ID != "cli-low" || items[len(items)-1].ID != "cli-nostamp" {
+		t.Fatalf("age: first=%s last=%s", items[0].ID, items[len(items)-1].ID)
 	}
 }

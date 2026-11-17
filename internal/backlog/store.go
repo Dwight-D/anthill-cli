@@ -41,8 +41,19 @@ type Store struct {
 func NewStore(root string) *Store { return &Store{root: root} }
 
 func (s *Store) dir() string            { return filepath.Join(s.root, ".anthill", "backlog") }
-func (s *Store) intakeDir() string      { return filepath.Join(s.dir(), "intake") }
+func (s *Store) intakeDir() string      { return filepath.Join(s.dir(), IntakeDir) }
 func (s *Store) wsDir(ws string) string { return filepath.Join(s.dir(), ws) }
+func (s *Store) doneDir() string        { return filepath.Join(s.dir(), DoneDir) }
+func (s *Store) discardedDir() string   { return filepath.Join(s.dir(), DiscardedDir) }
+
+// Root returns the directory that contains .anthill.
+func (s *Store) Root() string { return s.root }
+
+// reservedDir reports whether name is a backlog subdirectory that is never a
+// workstream (intake and the two archives).
+func reservedDir(name string) bool {
+	return name == IntakeDir || name == DoneDir || name == DiscardedDir
+}
 
 // ChangelogPath is the backlog changelog file.
 func (s *Store) ChangelogPath() string { return filepath.Join(s.dir(), "CHANGELOG.md") }
@@ -56,7 +67,7 @@ func (s *Store) Workstreams() ([]string, error) {
 	}
 	var out []string
 	for _, e := range entries {
-		if e.IsDir() && e.Name() != "intake" {
+		if e.IsDir() && !reservedDir(e.Name()) && !strings.HasPrefix(e.Name(), ".") {
 			out = append(out, e.Name())
 		}
 	}
@@ -73,7 +84,7 @@ func (s *Store) IsWorkstream(ws string) (bool, error) {
 		}
 		return false, err
 	}
-	return info.IsDir() && ws != "intake", nil
+	return info.IsDir() && !reservedDir(ws), nil
 }
 
 // SweepOrder reads workstreams.md frontmatter and returns the sweep order plus
@@ -222,20 +233,20 @@ func (s *Store) scanDir(dir string) ([]*Item, error) {
 	return items, nil
 }
 
-// LoadAll returns every parseable item across intake/ and all workstream dirs.
-func (s *Store) LoadAll() ([]*Item, error) {
+// LoadAll returns every parseable live item across intake/ and all workstream
+// dirs (the archives done/ and discarded/ are skipped).
+func (s *Store) LoadAll() ([]*Item, error) { return s.Load(false) }
+
+// Load returns every parseable item; includeArchived also walks done/ and
+// discarded/.
+func (s *Store) Load(includeArchived bool) ([]*Item, error) {
+	dirs, err := s.itemDirs(includeArchived)
+	if err != nil {
+		return nil, err
+	}
 	var all []*Item
-	intake, err := s.scanDir(s.intakeDir())
-	if err != nil {
-		return nil, err
-	}
-	all = append(all, intake...)
-	wss, err := s.Workstreams()
-	if err != nil {
-		return nil, err
-	}
-	for _, ws := range wss {
-		items, err := s.scanDir(s.wsDir(ws))
+	for _, d := range dirs {
+		items, err := s.scanDir(d)
 		if err != nil {
 			return nil, err
 		}
@@ -245,9 +256,26 @@ func (s *Store) LoadAll() ([]*Item, error) {
 	return all, nil
 }
 
+// itemDirs lists the directories that hold items: intake, every workstream,
+// and (optionally) the archives.
+func (s *Store) itemDirs(includeArchived bool) ([]string, error) {
+	dirs := []string{s.intakeDir()}
+	wss, err := s.Workstreams()
+	if err != nil {
+		return nil, err
+	}
+	for _, ws := range wss {
+		dirs = append(dirs, s.wsDir(ws))
+	}
+	if includeArchived {
+		dirs = append(dirs, s.doneDir(), s.discardedDir())
+	}
+	return dirs, nil
+}
+
 // takenIDs returns the set of ids currently used across the tree.
 func (s *Store) takenIDs() (map[string]bool, error) {
-	items, err := s.LoadAll()
+	items, err := s.Load(true)
 	if err != nil {
 		return nil, err
 	}
@@ -258,17 +286,15 @@ func (s *Store) takenIDs() (map[string]bool, error) {
 	return taken, nil
 }
 
-// Find loads a single item by id, searching intake/ then workstream dirs.
+// Find loads a single item by id, searching intake/, the workstream dirs, then
+// the archives.
 func (s *Store) Find(id string) (*Item, error) {
-	candidates := []string{filepath.Join(s.intakeDir(), id+".md")}
-	wss, err := s.Workstreams()
+	dirs, err := s.itemDirs(true)
 	if err != nil {
 		return nil, err
 	}
-	for _, ws := range wss {
-		candidates = append(candidates, filepath.Join(s.wsDir(ws), id+".md"))
-	}
-	for _, path := range candidates {
+	for _, d := range dirs {
+		path := filepath.Join(d, id+".md")
 		data, rerr := os.ReadFile(path)
 		if rerr != nil {
 			if os.IsNotExist(rerr) {
@@ -283,15 +309,36 @@ func (s *Store) Find(id string) (*Item, error) {
 
 // NewParams carries the submitter-provided fields for backlog new.
 type NewParams struct {
-	Title    string
-	Value    string
-	Source   string
-	Hint     string
-	Priority string
+	Title       string
+	Value       string
+	Summary     string
+	Description string
+	Source      string
+	Hint        string
+	Priority    string
+	Reporter    string
 }
 
-// New creates and persists an intake item, generating a unique id from the
-// title. It validates the result before persisting.
+// Skeleton returns the section skeleton of a new item body, with description
+// under "## Description".
+func Skeleton(description string) string {
+	var b strings.Builder
+	for i, h := range SectionOrder {
+		if i > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString("## " + h + "\n")
+		if h == "Description" && strings.TrimSpace(description) != "" {
+			b.WriteString(strings.TrimSpace(description) + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+// New creates and persists an intake item (status new, dispatch proposed),
+// generating a unique id from the title and stamping created-at. It validates
+// the result before persisting. On a tree with no schema stamp and no items
+// yet, it stamps `schema: 2` first (there is nothing to migrate).
 func (s *Store) New(p NewParams) (*Item, error) {
 	base := Slug(p.Title)
 	if base == "" {
@@ -302,18 +349,35 @@ func (s *Store) New(p NewParams) (*Item, error) {
 		return nil, err
 	}
 	id := UniqueID(base, taken)
-	it := &Item{
-		Title:    p.Title,
-		Value:    p.Value,
-		Source:   p.Source,
-		Hint:     p.Hint,
-		Priority: p.Priority,
-		Status:   "idea",
-		ID:       id,
-		Path:     filepath.Join(s.intakeDir(), id+".md"),
+	priority := p.Priority
+	if priority == "" {
+		priority = "normal"
 	}
-	if err := s.validateForPersist(it, true); err != nil {
+	it := &Item{
+		Title:     p.Title,
+		Summary:   p.Summary,
+		Value:     p.Value,
+		Status:    StatusNew,
+		Dispatch:  DispatchProposed,
+		Priority:  priority,
+		Reporter:  ResolveReporter(p.Reporter),
+		Source:    p.Source,
+		Hint:      p.Hint,
+		CreatedAt: Stamp(),
+		ID:        id,
+		Path:      filepath.Join(s.intakeDir(), id+".md"),
+		Body:      Skeleton(p.Description),
+	}
+	it.appendLog("new", ResolveActor(""), "", "")
+	if err := s.validateForPersist(it); err != nil {
 		return nil, err
+	}
+	if len(taken) == 0 {
+		if v, _ := s.SchemaVersion(); v == 0 {
+			if err := s.StampSchema(); err != nil {
+				return nil, err
+			}
+		}
 	}
 	if err := s.persist(it); err != nil {
 		return nil, err
@@ -332,7 +396,7 @@ func (s *Store) persist(it *Item) error {
 
 // Save re-validates and atomically writes an existing item in place.
 func (s *Store) Save(it *Item) error {
-	if err := s.validateForPersist(it, false); err != nil {
+	if err := s.validateForPersist(it); err != nil {
 		return err
 	}
 	return s.persist(it)
@@ -349,20 +413,31 @@ func (s *Store) Move(it *Item, ws string) error {
 	if !ok {
 		return invalid("workstream target %q is not an existing workstream directory", ws)
 	}
-	oldPath := it.Path
-	newPath := filepath.Join(s.wsDir(ws), it.ID+".md")
+	oldWs := it.Workstream
 	it.Workstream = ws
+	if err := s.relocate(it, s.wsDir(ws)); err != nil {
+		it.Workstream = oldWs
+		return err
+	}
+	return nil
+}
+
+// relocate writes the item into dir (validated, atomic) and removes the old
+// file. On failure the in-memory Path is rolled back.
+func (s *Store) relocate(it *Item, dir string) error {
+	oldPath := it.Path
+	newPath := filepath.Join(dir, it.ID+".md")
 	it.Path = newPath
-	if err := s.validateForPersist(it, false); err != nil {
-		it.Path = oldPath // roll back the in-memory change
+	if err := s.validateForPersist(it); err != nil {
+		it.Path = oldPath
 		return err
 	}
 	if err := s.persist(it); err != nil {
 		it.Path = oldPath
 		return err
 	}
-	if oldPath != newPath {
-		if err := os.Remove(oldPath); err != nil {
+	if oldPath != "" && oldPath != newPath {
+		if err := os.Remove(oldPath); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove old file %s after move: %w", oldPath, err)
 		}
 	}
@@ -384,7 +459,7 @@ func (s *Store) AppendChangelog(id, disposition, reason string) error {
 	line := fmt.Sprintf("- %s %s — %s: %s",
 		time.Now().Format("2006-01-02"), id, disposition, reason)
 	heading := "## Done"
-	if disposition != "done" {
+	if !strings.HasPrefix(disposition, "done") {
 		heading = "## Discarded"
 	}
 	path := s.ChangelogPath()

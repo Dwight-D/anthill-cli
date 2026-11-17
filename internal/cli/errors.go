@@ -65,6 +65,9 @@ func wrapStoreErr(err error) *Error {
 	if errors.As(err, &bpe) {
 		return preconditionErr(bpe.Msg)
 	}
+	if errors.Is(err, backlog.ErrNeedsMigration) {
+		return preconditionErr(err.Error())
+	}
 	if errors.Is(err, backlog.ErrNotFound) || errors.Is(err, escalation.ErrNotFound) {
 		return notFoundErr(err.Error(), "")
 	}

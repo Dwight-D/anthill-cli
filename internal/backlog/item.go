@@ -10,22 +10,30 @@ import (
 
 // Item is a single backlog item: the YAML frontmatter fields plus derived,
 // never-stored fields (ID, Path, Body). Serialisation order matches the schema
-// table so files stay git-friendly and human-readable.
+// table (BACKLOG_V2_SPEC.md §1.1) so files stay git-friendly and readable.
 type Item struct {
-	Workstream   string `yaml:"workstream,omitempty"`
-	Title        string `yaml:"title"`
-	Value        string `yaml:"value"`
-	Source       string `yaml:"source,omitempty"`
-	Hint         string `yaml:"hint,omitempty"`
-	ChangeType   string `yaml:"change-type,omitempty"`
-	Risk         string `yaml:"risk,omitempty"`
-	Verify       string `yaml:"verify,omitempty"`
-	ValueVerdict string `yaml:"value-verdict,omitempty"`
-	Disposition  string `yaml:"disposition,omitempty"`
-	Status       string `yaml:"status"`
-	Priority     string `yaml:"priority,omitempty"`
-	Note         string `yaml:"note,omitempty"`
-	ClaimedAt    string `yaml:"claimed-at,omitempty"`
+	Title       string `yaml:"title"`
+	Summary     string `yaml:"summary,omitempty"`
+	Value       string `yaml:"value"`
+	Workstream  string `yaml:"workstream,omitempty"`
+	Status      string `yaml:"status"`
+	Dispatch    string `yaml:"dispatch,omitempty"`
+	Disposition string `yaml:"disposition,omitempty"`
+	Priority    string `yaml:"priority,omitempty"`
+	Reporter    string `yaml:"reporter,omitempty"`
+	ChangeType  string `yaml:"change-type,omitempty"`
+	Risk        string `yaml:"risk,omitempty"`
+	Verify      string `yaml:"verify,omitempty"`
+	Source      string `yaml:"source,omitempty"`
+	Hint        string `yaml:"hint,omitempty"`
+	Note        string `yaml:"note,omitempty"`
+	CreatedAt   string `yaml:"created-at,omitempty"`
+	TriagedAt   string `yaml:"triaged-at,omitempty"`
+	ClaimedAt   string `yaml:"claimed-at,omitempty"`
+	ClaimedBy   string `yaml:"claimed-by,omitempty"`
+	Session     string `yaml:"session,omitempty"`
+	DeliveredAt string `yaml:"delivered-at,omitempty"`
+	ClosedAt    string `yaml:"closed-at,omitempty"`
 
 	// Derived, never serialised into frontmatter.
 	ID   string `yaml:"-"`
@@ -33,11 +41,31 @@ type Item struct {
 	Body string `yaml:"-"`
 }
 
-// Ready reports whether the item is dispatchable: approved with a concrete
-// verify (non-empty and not the literal "none").
+// RealVerify reports whether v is a concrete acceptance test (non-empty and not
+// the literal "none").
+func RealVerify(v string) bool { return v != "" && v != "none" }
+
+// Ready reports whether an agent may pick the item up unattended: triaged,
+// dispatch said go (approved or fast-tracked), disposition auto, and a real
+// verify.
 func (it *Item) Ready() bool {
-	return it.Status == "approved" && it.Verify != "" && it.Verify != "none"
+	return it.Status == StatusTriaged &&
+		(it.Dispatch == DispatchApproved || it.Dispatch == DispatchFastTracked) &&
+		it.Disposition == "auto" && RealVerify(it.Verify)
 }
+
+// Active reports whether the item is being worked (in-progress or validation).
+func (it *Item) Active() bool {
+	return it.Status == StatusInProgress || it.Status == StatusValidation
+}
+
+// Terminal reports whether the item is archived (done or discarded).
+func (it *Item) Terminal() bool {
+	return it.Status == StatusDone || it.Status == StatusDiscarded
+}
+
+// Sections returns the item body's "## " sections as heading -> trimmed text.
+func (it *Item) Sections() map[string]string { return mdfile.SectionMap(it.Body) }
 
 // marshalFile renders the item to a full markdown file (frontmatter + body).
 func (it *Item) marshalFile() ([]byte, error) {

@@ -5,10 +5,9 @@
 // STDLIB ONLY and never imports the implementation packages: everything is
 // exercised through the compiled binary, exactly as an agent or script would.
 //
-// The contract under test is docs/CLI_INTERFACE_SPEC.md (including the user's
-// binding answers in §7). Tests are written to the spec, not to any particular
-// implementation; they are expected to fail until the implementation lands and
-// to go green once it does.
+// The contracts under test are docs/BACKLOG_V2_SPEC.md (backlog schema, verbs,
+// lifecycle) and docs/CLI_INTERFACE_SPEC.md (escalations, global conventions).
+// Tests are written to the spec, not to any particular implementation.
 package e2e_test
 
 import (
@@ -73,11 +72,46 @@ type result struct {
 	exit   int
 }
 
+// identityEnv are the environment variables the CLI reads for reporter,
+// claimant, and session identity. run scrubs them from the inherited
+// environment so every test is hermetic; runEnv sets them explicitly.
+var identityEnv = []string{"ANTHILL_ACTOR", "ANTHILL_REPORTER", "CLAUDE_CODE_SESSION_ID", "CLAUDECODE", "ANTHILL_ROOT"}
+
+// hermeticEnv returns os.Environ() minus identityEnv, plus extra (KEY=VALUE).
+func hermeticEnv(extra ...string) []string {
+	var env []string
+	for _, kv := range os.Environ() {
+		drop := false
+		for _, k := range identityEnv {
+			if strings.HasPrefix(strings.ToUpper(kv), k+"=") {
+				drop = true
+			}
+		}
+		if !drop {
+			env = append(env, kv)
+		}
+	}
+	return append(env, extra...)
+}
+
 // run invokes the binary with the given args, no --root injected. Use for
 // version/help/unknown-command and init (which supplies its own --root).
 func run(t *testing.T, args ...string) result {
 	t.Helper()
+	return runWithEnv(t, nil, args...)
+}
+
+// runEnv invokes the binary against root with extra environment (KEY=VALUE).
+func runEnv(t *testing.T, root string, env []string, args ...string) result {
+	t.Helper()
+	full := append([]string{"--root", root}, args...)
+	return runWithEnv(t, env, full...)
+}
+
+func runWithEnv(t *testing.T, env []string, args ...string) result {
+	t.Helper()
 	cmd := exec.Command(binPath, args...)
+	cmd.Env = hermeticEnv(env...)
 	var so, se bytes.Buffer
 	cmd.Stdout = &so
 	cmd.Stderr = &se
@@ -123,7 +157,7 @@ func mkTree(t *testing.T) string {
 	writeRaw(t, filepath.Join(base, "backlog", "CHANGELOG.md"), "# Changelog\n")
 	writeRaw(t, filepath.Join(base, "escalations", "LOG.md"), "# Escalation log\n")
 	writeRaw(t, filepath.Join(base, "backlog", "workstreams.md"),
-		"---\nsweep-order: bugs, cli, dev, process\nnever-implicit:\n---\n\n# Workstreams\n")
+		"---\nschema: 2\nsweep-order: bugs, cli, dev, process\nnever-implicit:\n---\n\n# Workstreams\n")
 	return root
 }
 
@@ -166,29 +200,60 @@ func writeItem(t *testing.T, root, dir, id string, fields map[string]string, bod
 	writeRaw(t, itemPath(root, dir, id), b.String())
 }
 
-// ideaFields is a minimal well-formed intake (untriaged) item.
-func ideaFields(title string) map[string]string {
+// newFields is a minimal well-formed intake (status new) item.
+func newFields(title string) map[string]string {
 	return map[string]string{
-		"title":  title,
-		"value":  "removes a real pain",
-		"status": "idea",
+		"title":      title,
+		"value":      "removes a real pain",
+		"status":     "new",
+		"dispatch":   "proposed",
+		"reporter":   "user",
+		"priority":   "normal",
+		"created-at": "2026-11-01T00:00:00Z",
 	}
 }
 
-// approvedFields is a well-formed triaged + approved (ready) item in workstream ws.
-func approvedFields(title, ws string) map[string]string {
-	return map[string]string{
-		"workstream":    ws,
-		"title":         title,
-		"value":         "removes a real pain",
-		"change-type":   "tooling",
-		"risk":          "additive",
-		"verify":        "go test ./...",
-		"value-verdict": "ADVANCE — worth it",
-		"disposition":   "AUTO",
-		"status":        "approved",
-		"priority":      "normal",
+// readyFields is a well-formed triaged + approved auto item (ready) in ws.
+func readyFields(title, ws string) map[string]string {
+	f := newFields(title)
+	f["workstream"] = ws
+	f["status"] = "triaged"
+	f["dispatch"] = "approved"
+	f["summary"] = "a summary of " + title
+	f["change-type"] = "tooling"
+	f["risk"] = "additive"
+	f["verify"] = "go test ./..."
+	f["disposition"] = "auto"
+	f["triaged-at"] = "2026-11-02T00:00:00Z"
+	return f
+}
+
+// claimedFields is an in-progress item claimed by worker-a.
+func claimedFields(title, ws string) map[string]string {
+	f := readyFields(title, ws)
+	f["status"] = "in-progress"
+	f["claimed-at"] = "2026-11-03T00:00:00Z"
+	f["claimed-by"] = "worker-a"
+	f["session"] = "sess-1"
+	return f
+}
+
+// validationFields is a delivered item awaiting a controller.
+func validationFields(title, ws string) map[string]string {
+	f := claimedFields(title, ws)
+	f["status"] = "validation"
+	f["delivered-at"] = "2026-11-04T00:00:00Z"
+	return f
+}
+
+// withField returns f with key set to v (v == "" deletes the key).
+func withField(f map[string]string, key, v string) map[string]string {
+	if v == "" {
+		delete(f, key)
+	} else {
+		f[key] = v
 	}
+	return f
 }
 
 // readFrontmatter parses the leading YAML frontmatter of a file into a map.

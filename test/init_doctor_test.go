@@ -72,19 +72,8 @@ func TestDoctorChangeTypeVocabWarnsNotFails(t *testing.T) {
 	// Declare a narrow vocabulary (streams match the scaffolded dirs so Section B
 	// sweep-order stays healthy); the item below uses a change-type outside it.
 	writeRaw(t, filepath.Join(backlogDir(dir), "workstreams.md"),
-		"---\nsweep-order: bugs, product, dev, process\nnever-implicit:\nchange-types: doc, tooling\n---\n\n# Workstreams\n")
-	writeItem(t, dir, "dev", "novel-item", map[string]string{
-		"workstream":    "dev",
-		"title":         "t",
-		"value":         "v",
-		"change-type":   "new-assembly",
-		"risk":          "additive",
-		"verify":        "go test ./...",
-		"value-verdict": "ADVANCE — x",
-		"disposition":   "REVIEW",
-		"status":        "approved",
-		"priority":      "normal",
-	}, "")
+		"---\nschema: 2\nsweep-order: bugs, product, dev, process\nnever-implicit:\nchange-types: doc, tooling\n---\n\n# Workstreams\n")
+	writeItem(t, dir, "dev", "novel-item", withField(readyFields("t", "dev"), "change-type", "new-assembly"), "")
 
 	r := runIn(t, dir, "doctor")
 	wantExit(t, r, 0)

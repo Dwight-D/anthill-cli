@@ -1,9 +1,7 @@
 package backlog
 
-import "strings"
-
-// Enum value sets for the item frontmatter schema (from bindings.md, owned by
-// this CLI as the schema owner).
+// Enum value sets for the item frontmatter schema (BACKLOG_V2_SPEC.md §1.1),
+// owned by this CLI as the schema owner.
 //
 // change-type is deliberately absent here: its vocabulary is the project's
 // domain, declared in workstreams.md frontmatter (`change-types`) and read via
@@ -11,50 +9,85 @@ import "strings"
 // hard rejection. The never-auto subset lives in the same config
 // (`never-auto-change-types`).
 
+// Lifecycle statuses (§2).
+const (
+	StatusNew        = "new"
+	StatusTriaged    = "triaged"
+	StatusInProgress = "in-progress"
+	StatusValidation = "validation"
+	StatusDone       = "done"
+	StatusBlocked    = "blocked"
+	StatusParked     = "parked"
+	StatusDiscarded  = "discarded"
+)
+
+// Dispatch values (§2.1).
+const (
+	DispatchProposed    = "proposed"
+	DispatchApproved    = "approved"
+	DispatchFastTracked = "fast-tracked"
+)
+
+// Archive directory names under backlog/ (§1.3). They are never workstreams.
+const (
+	DoneDir      = "done"
+	DiscardedDir = "discarded"
+	IntakeDir    = "intake"
+)
+
+var statuses = map[string]bool{
+	StatusNew: true, StatusTriaged: true, StatusInProgress: true, StatusValidation: true,
+	StatusDone: true, StatusBlocked: true, StatusParked: true, StatusDiscarded: true,
+}
+
+var dispatches = map[string]bool{
+	DispatchProposed: true, DispatchApproved: true, DispatchFastTracked: true,
+}
+
+var dispositions = map[string]bool{
+	"auto": true, "design": true, "interactive": true, "open": true,
+}
+
+var priorities = map[string]bool{
+	"high": true, "normal": true, "low": true,
+}
+
+var reporters = map[string]bool{
+	"user": true, "supervisor": true, "worker": true,
+}
+
 var risks = map[string]bool{
 	"additive": true, "reversible": true, "behavior-change": true, "subjective": true,
 }
 
-var dispositions = map[string]bool{
-	"AUTO": true, "REVIEW": true, "DISCARD": true,
-}
-
-var statuses = map[string]bool{
-	"idea": true, "approved": true, "in-progress": true,
-	"blocked": true, "parked": true, "done": true,
-}
-
-var priorities = map[string]bool{
-	"high": true, "normal": true,
-}
-
-var valueVerdictPrefixes = []string{"ADVANCE", "HOLD", "DISCARD"}
-
-// validValueVerdict reports whether v is a legal value-verdict: one of the
-// prefixes optionally followed by " — <why>".
-func validValueVerdict(v string) bool {
-	for _, p := range valueVerdictPrefixes {
-		if v == p || strings.HasPrefix(v, p+" ") || strings.HasPrefix(v, p+" —") {
-			return true
-		}
+// EnumValues returns the legal values of an enum-typed frontmatter key, or nil
+// when the key is not a closed enum.
+func EnumValues(key string) map[string]bool {
+	switch key {
+	case "status":
+		return statuses
+	case "dispatch":
+		return dispatches
+	case "disposition":
+		return dispositions
+	case "priority":
+		return priorities
+	case "reporter":
+		return reporters
+	case "risk":
+		return risks
 	}
-	return false
+	return nil
 }
 
-// settableKeys are the frontmatter keys mutable via `backlog set`. id is
-// immutable and absent here; claimed-at is managed by claim/close, not set.
+// settableKeys are the free frontmatter keys mutable via `backlog set` (§6.5).
+// status and dispatch move only through their verbs; the timestamps, claim
+// fields and reporter are CLI-owned.
 var settableKeys = map[string]bool{
-	"workstream": true, "title": true, "value": true, "source": true,
-	"hint": true, "change-type": true, "risk": true, "verify": true,
-	"value-verdict": true, "disposition": true, "status": true,
-	"priority": true, "note": true,
+	"title": true, "summary": true, "value": true, "source": true, "hint": true,
+	"note": true, "priority": true, "disposition": true, "change-type": true,
+	"risk": true, "verify": true, "workstream": true,
 }
 
-// knownKeys is every frontmatter key the schema recognises (for the unknown-key
-// typo guard in validation).
-var knownKeys = map[string]bool{
-	"workstream": true, "title": true, "value": true, "source": true,
-	"hint": true, "change-type": true, "risk": true, "verify": true,
-	"value-verdict": true, "disposition": true, "status": true,
-	"priority": true, "note": true, "claimed-at": true,
-}
+// SectionOrder is the canonical order of the item body's "## " sections (§1.2).
+var SectionOrder = []string{"Description", "Acceptance", "Triage", "Evidence", "Log"}

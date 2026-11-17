@@ -87,24 +87,4 @@ func parseRecord(data []byte, id, path string) (*Record, error) {
 }
 
 // parseSections splits a markdown body into a map of "## Header" -> body text.
-func parseSections(body string) map[string]string {
-	sections := map[string]string{}
-	var cur string
-	var buf []string
-	flush := func() {
-		if cur != "" {
-			sections[cur] = strings.TrimSpace(strings.Join(buf, "\n"))
-		}
-		buf = nil
-	}
-	for _, line := range strings.Split(body, "\n") {
-		if h := strings.TrimPrefix(line, "## "); h != line {
-			flush()
-			cur = strings.TrimSpace(h)
-			continue
-		}
-		buf = append(buf, line)
-	}
-	flush()
-	return sections
-}
+func parseSections(body string) map[string]string { return mdfile.SectionMap(body) }

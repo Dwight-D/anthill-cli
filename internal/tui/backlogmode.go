@@ -8,7 +8,7 @@ import (
 )
 
 // BacklogMode is the backlog screen: every item across intake and workstreams
-// in sweep order, with the lifecycle actions of the backlog verbs.
+// in rank order, with the lifecycle actions of the backlog verbs.
 type BacklogMode struct {
 	store *backlog.Store
 	items []*backlog.Item
@@ -22,7 +22,7 @@ func NewBacklogMode(store *backlog.Store) *BacklogMode {
 // Name implements Mode.
 func (b *BacklogMode) Name() string { return "Backlog" }
 
-// Reload implements Mode: re-scan the tree and sort in sweep order.
+// Reload implements Mode: re-scan the live tree and sort by rank.
 func (b *BacklogMode) Reload() error {
 	items, err := b.store.LoadAll()
 	if err != nil {
@@ -32,7 +32,7 @@ func (b *BacklogMode) Reload() error {
 	if err != nil {
 		return err
 	}
-	backlog.SortItems(items, "sweep", order)
+	backlog.SortItems(items, "rank", order, false)
 	b.items = items
 	return nil
 }
@@ -75,36 +75,28 @@ func (b *BacklogMode) Detail(i int) string {
 			fmt.Fprintf(&sb, "%-14s %s\n", label+":", val)
 		}
 	}
-	field("id", it.ID)
-	field("workstream", it.Workstream)
-	field("title", it.Title)
-	field("value", it.Value)
-	field("source", it.Source)
-	field("hint", it.Hint)
-	field("change-type", it.ChangeType)
-	field("risk", it.Risk)
-	field("verify", it.Verify)
-	field("value-verdict", it.ValueVerdict)
-	field("disposition", it.Disposition)
-	field("status", it.Status)
-	field("priority", it.Priority)
-	field("note", it.Note)
-	field("claimed-at", it.ClaimedAt)
-	field("ready", fmt.Sprintf("%v", it.Ready()))
+	for _, k := range backlog.FieldNames {
+		if k == "path" {
+			continue
+		}
+		field(k, it.Field(k))
+	}
 	if it.Body != "" {
 		sb.WriteString("\n" + strings.TrimRight(it.Body, "\n") + "\n")
 	}
 	return sb.String()
 }
 
-// Actions implements Mode. Each Do maps 1:1 to a backlog verb's domain
-// transition; discard and remove are confirm-gated as destructive.
+// Actions implements Mode. Each Do maps 1:1 to a backlog verb: approve →
+// `approve` (dispatch approved), done → `close --done`, discard →
+// `close --discard`, remove → `close --remove`. discard and remove are
+// confirm-gated as destructive.
 func (b *BacklogMode) Actions() []Action {
 	return []Action{
 		{Key: "a", Label: "approve", Do: b.approve},
-		{Key: "d", Label: "done", Do: b.closer("done")},
-		{Key: "x", Label: "discard", Confirm: true, Do: b.closer("discard")},
-		{Key: "X", Label: "remove", Confirm: true, Do: b.closer("remove")},
+		{Key: "d", Label: "done", Do: b.closer(backlog.CloseDone)},
+		{Key: "x", Label: "discard", Confirm: true, Do: b.closer(backlog.CloseDiscard)},
+		{Key: "X", Label: "remove", Confirm: true, Do: b.closer(backlog.CloseRemove)},
 	}
 }
 
@@ -116,12 +108,12 @@ func (b *BacklogMode) approve(i int) (string, error) {
 	return "approved " + it.ID, nil
 }
 
-func (b *BacklogMode) closer(disposition string) func(int) (string, error) {
+func (b *BacklogMode) closer(mode string) func(int) (string, error) {
 	return func(i int) (string, error) {
 		it := b.items[i]
-		if err := b.store.Close(it, disposition, ""); err != nil {
+		if _, err := b.store.Close(it, mode, "", "", false); err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("closed %s (%s)", it.ID, disposition), nil
+		return fmt.Sprintf("closed %s (%s)", it.ID, mode), nil
 	}
 }
